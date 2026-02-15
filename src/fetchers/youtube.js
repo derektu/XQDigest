@@ -1,0 +1,169 @@
+const axios = require('axios');
+const { execFile } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const Logger = require('../logger');
+
+const TRANSCRIPT_LANG_PRIORITY = ['zh-TW', 'zh-Hant', 'zh-Hans', 'zh-CN', 'en'];
+
+class YouTubeFetcher {
+  static CHANNEL_URL_PATTERN = /^https?:\/\/(?:www\.)?youtube\.com\/(?:@[\w.-]+|channel\/UC[\w-]+|c\/[\w.-]+)\/?$/;
+
+  static validateChannelUrl(url) {
+    return YouTubeFetcher.CHANNEL_URL_PATTERN.test(url);
+  }
+
+  constructor(logger) {
+    this.logger = logger || Logger.getLogger('YouTubeFetcher');
+  }
+
+  /**
+   * Fetch recent video IDs from a YouTube channel.
+   * Uses the channel's RSS feed (no API key required).
+   * @param {string} channelUrl - YouTube channel URL (e.g. https://www.youtube.com/@channelname)
+   * @returns {Array<{videoId, title, publishedDate, url}>}
+   */
+  async fetchRecentVideos(channelUrl) {
+    if (!YouTubeFetcher.validateChannelUrl(channelUrl)) {
+      throw new Error(`Invalid YouTube channel URL format: ${channelUrl}`);
+    }
+
+    const channelId = await this._resolveChannelId(channelUrl);
+    if (!channelId) {
+      throw new Error(`Cannot resolve channel ID from URL: ${channelUrl}`);
+    }
+
+    const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+    const RssParser = require('rss-parser');
+    const parser = new RssParser();
+    const feed = await parser.parseURL(feedUrl);
+
+    return feed.items.map(item => ({
+      videoId: this._extractVideoId(item.link),
+      title: item.title,
+      publishedDate: item.pubDate || item.isoDate,
+      url: item.link,
+      author: feed.title,
+    }));
+  }
+
+  /**
+   * Download transcript for a YouTube video using yt-dlp.
+   * Tries both manual and auto-generated subtitles in priority order:
+   * zh-TW, zh-Hant, zh-Hans, zh-CN, en.
+   * @param {string} videoId
+   * @returns {string} Full transcript text
+   */
+  async fetchTranscript(videoId) {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ytdlp-sub-'));
+    try {
+      for (const lang of TRANSCRIPT_LANG_PRIORITY) {
+        try {
+          await this._runYtDlp(videoId, lang, tmpDir);
+          const files = fs.readdirSync(tmpDir).filter(f => f.endsWith('.vtt'));
+          if (files.length > 0) {
+            const vtt = fs.readFileSync(path.join(tmpDir, files[0]), 'utf-8');
+            const text = this._parseVTT(vtt);
+            if (text.length > 0) {
+              this.logger.debug(`Transcript fetched via yt-dlp for ${videoId} in language: ${lang}`);
+              return text;
+            }
+          }
+        } catch {
+          this.logger.debug(`yt-dlp: no subtitle in ${lang} for ${videoId}`);
+        }
+        // Clean files for next attempt
+        for (const f of fs.readdirSync(tmpDir)) {
+          fs.unlinkSync(path.join(tmpDir, f));
+        }
+      }
+      throw new Error(`yt-dlp: no subtitles found for ${videoId}`);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Run yt-dlp to download subtitles for a video.
+   */
+  _runYtDlp(videoId, lang, outputDir) {
+    return new Promise((resolve, reject) => {
+      const url = `https://www.youtube.com/watch?v=${videoId}`;
+      const args = [
+        '--write-auto-sub', '--sub-lang', lang, '--sub-format', 'vtt',
+        '--skip-download', '--no-warnings', '--no-progress',
+        '-o', path.join(outputDir, 'sub'),
+        url,
+      ];
+      execFile('yt-dlp', args, { timeout: 30000 }, (err, stdout, stderr) => {
+        if (err) return reject(err);
+        resolve(stdout);
+      });
+    });
+  }
+
+  /**
+   * Parse VTT subtitle text into plain text.
+   * Strips timestamps, headers, and duplicate lines.
+   */
+  _parseVTT(vtt) {
+    const lines = vtt.split('\n');
+    const textLines = [];
+    const seen = new Set();
+    for (const line of lines) {
+      const trimmed = line.trim();
+      // Skip VTT headers, timestamp lines, and empty lines
+      if (!trimmed || trimmed === 'WEBVTT' || trimmed.startsWith('Kind:') ||
+          trimmed.startsWith('Language:') || trimmed.includes('-->') ||
+          /^NOTE\b/.test(trimmed) || /^\d+$/.test(trimmed)) {
+        continue;
+      }
+      // Strip HTML tags (e.g. <c>, </c>, <font>)
+      const clean = trimmed.replace(/<[^>]+>/g, '').trim();
+      if (clean && !seen.has(clean)) {
+        seen.add(clean);
+        textLines.push(clean);
+      }
+    }
+    return textLines.join(' ');
+  }
+
+  /**
+   * Resolve channel URL to channel ID.
+   * Fetches the channel page and extracts the channel ID from meta tags.
+   */
+  async _resolveChannelId(channelUrl) {
+    try {
+      const resp = await axios.get(channelUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        timeout: 15000,
+      });
+      const html = resp.data;
+      // Look for channel ID in meta tag or page content
+      const match = html.match(/(?:"channelId"|"externalId"):"(UC[a-zA-Z0-9_-]+)"/);
+      if (match) return match[1];
+      // Fallback: look in canonical link
+      const canonical = html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/channel\/(UC[a-zA-Z0-9_-]+)"/);
+      if (canonical) return canonical[1];
+      return null;
+    } catch (err) {
+      this.logger.error(`Failed to resolve channel ID for ${channelUrl}: ${err.message}`);
+      return null;
+    }
+  }
+
+  _extractVideoId(url) {
+    const match = url.match(/[?&]v=([a-zA-Z0-9_-]+)/);
+    if (match) return match[1];
+    // YouTube Shorts format: /shorts/ID
+    const shorts = url.match(/\/shorts\/([a-zA-Z0-9_-]+)/);
+    if (shorts) return shorts[1];
+    // yt:video:ID format from RSS
+    const match2 = url.match(/\/watch\?v=([a-zA-Z0-9_-]+)/);
+    return match2 ? match2[1] : url;
+  }
+}
+
+module.exports = YouTubeFetcher;

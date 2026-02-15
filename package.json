@@ -1,0 +1,24 @@
+{
+  "name": "xqdigest",
+  "version": "0.1.0",
+  "description": "XQDigest - 財經資訊自動摘要工具",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test tests/test-*.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "axios": "^1.7.0",
+    "better-sqlite3": "^11.0.0",
+    "chokidar": "^3.6.0",
+    "fs-extra": "^11.2.0",
+    "gray-matter": "^4.0.3",
+    "node-cron": "^3.0.3",
+    "openai": "^4.20.0",
+    "rss-parser": "^3.13.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

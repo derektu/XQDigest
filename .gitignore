@@ -1,0 +1,14 @@
+node_modules/
+data/
+logs/
+*.log
+.DS_Store
+
+# User-specific config (contains API keys)
+config/settings.json
+
+# Claude Code local state
+.claude/
+
+# Personal scratch pad
+doc/Tasks.md

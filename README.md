@@ -35,6 +35,10 @@ brew install yt-dlp
 # https://github.com/yt-dlp/yt-dlp/releases
 ```
 
+> **Console 中文顯示**：Windows 預設 terminal codepage 可能導致中文 log 亂碼。
+> 建議使用 [Windows Terminal](https://aka.ms/terminal)（預設 UTF-8），或在啟動前執行 `chcp 65001`。
+> Log 檔案（`logs/app.log`）不受影響，始終為 UTF-8。
+
 ### Linux
 
 ```bash

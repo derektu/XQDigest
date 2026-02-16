@@ -10,12 +10,12 @@ class TrayManager {
   }
 
   _getIconPath() {
-    // macOS: "Template" suffix triggers auto dark/light mode adaptation
-    // Windows/Linux: use the @2x (32x32) version directly
     if (process.platform === 'darwin') {
+      // "Template" suffix triggers auto dark/light mode adaptation
       return path.join(__dirname, 'icons', 'iconTemplate.png');
     }
-    return path.join(__dirname, 'icons', 'iconTemplate@2x.png');
+    // Windows/Linux: colored icon
+    return path.join(__dirname, 'icons', 'icon-win.png');
   }
 
   _createTray() {

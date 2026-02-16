@@ -1,12 +1,6 @@
 const { app } = require('electron');
-const { execSync } = require('child_process');
 const AppEngine = require('../src/app-engine');
 const TrayManager = require('./tray');
-
-// Windows: set console codepage to UTF-8
-if (process.platform === 'win32') {
-  try { execSync('chcp 65001', { stdio: 'ignore' }); } catch {}
-}
 
 // Tray-only app — no GPU needed
 app.disableHardwareAcceleration();

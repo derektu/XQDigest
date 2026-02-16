@@ -8,7 +8,7 @@
     "node:rebuild": "npm rebuild better-sqlite3",
     "electron": "electron .",
     "electron:rebuild": "electron-rebuild -f -w better-sqlite3",
-    "electron:start": "npm run electron:rebuild && electron .",
+    "electron:start": "npm run electron:rebuild && npm run electron",
     "test": "npm run node:rebuild && node --test tests/test-*.js"
   },
   "dependencies": {

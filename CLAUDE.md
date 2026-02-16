@@ -1,7 +1,53 @@
 # XQDigest - Claude Code 開發規範
 
 ## 專案概述
-XQDigest 是財經資訊自動摘要工具，目前處於 Phase 0 (POC) 階段，純 Node.js (CommonJS) 專案。
+
+XQDigest 是財經資訊自動摘要工具。自動監控 YouTube 頻道與 RSS Feed，下載內容並透過 LLM 產生摘要。
+
+- **Phase 0 (POC)**: 純 CLI 驗證核心流程 — 已完成
+- **Phase 1**: Electron 框架整合（AppEngine + tray）— 已完成
+- **Phase 2**: UI 功能逐步建置 — 下一階段
+
+純 Node.js (CommonJS) 專案，Electron 作為桌面外殼。
+
+## 架構導覽
+
+理解系統的關鍵文件（建議閱讀順序）：
+
+| 文件 | 說明 |
+|------|------|
+| `doc/Phase0_模組設計文件.md` | 核心模組架構、介面、資料流程（完整參考） |
+| `doc/Phase1_Electron整合設計文件.md` | AppEngine 狀態機、Electron 整合、跨平台處理 |
+| `src/app-engine.js` | 應用核心引擎，封裝所有模組初始化與生命週期 |
+| `src/index.js` | CLI 模式入口（透過 AppEngine） |
+| `electron/main.js` | Electron 入口（AppEngine + TrayManager） |
+| `electron/tray.js` | 系統匣管理（macOS/Windows 跨平台 icon） |
+| `config/settings.json.example` | 設定檔格式參考 |
+
+## 專案結構
+
+```
+src/                  — 核心模組（純 Node.js，無 Electron 依賴）
+  ├── app-engine.js   — 應用引擎（狀態機 + 模組協調）
+  ├── index.js        — CLI 入口
+  ├── config.js       — 設定管理
+  ├── logger.js       — Logger (singleton)
+  ├── queue.js        — 下載佇列（並發控制 + 重試）
+  ├── scheduler.js    — 排程與處理 pipeline
+  ├── storage.js      — Markdown + SQLite 雙寫
+  ├── database/       — SQLite 操作
+  ├── fetchers/       — YouTube / RSS 資料抓取
+  └── llm/            — LLM provider（OpenAI / Gemini）
+electron/             — Electron 桌面外殼
+  ├── main.js         — Electron main process
+  ├── tray.js         — 系統匣管理
+  └── icons/          — 平台圖示
+tests/                — 測試程式
+config/               — 設定檔
+doc/                  — 設計文件
+data/                 — 運行時資料 (git ignored)
+logs/                 — 日誌 (git ignored)
+```
 
 ## 測試規範
 
@@ -27,136 +73,10 @@ node --test tests/test-config.js    # 執行單一模組測試
 3. 修改設定檔格式 → 更新 `tests/test-config.js`
 4. 修改資料庫 schema → 更新 `tests/test-db.js` 和 `tests/test-storage.js`
 
-### 測試撰寫格式
+### 測試慣例
 
-#### 基本結構
-
-```javascript
-const { describe, it, before, after } = require('node:test');
-const assert = require('node:assert/strict');
-const MyModule = require('../src/my-module');
-
-describe('MyModule', () => {
-  before(() => { /* 整個 suite 執行前一次 */ });
-  after(() => { /* 整個 suite 結束後一次 */ });
-
-  it('methodA() 應回傳正確結果', () => {
-    assert.equal(actual, expected);
-  });
-
-  it('methodB() 非同步操作', async () => {
-    const result = await myModule.doAsync();
-    assert.ok(result);
-  });
-});
-```
-
-#### 生命週期 hooks 使用時機
-
-| Hook | 用途 |
-|------|------|
-| `before` / `after` | 整個 describe 共用的資源（DB 連線、一次性 setup） |
-| `beforeEach` / `afterEach` | 每個 it 都需要乾淨狀態時（每次重建暫存目錄） |
-
-#### 暫存檔案管理
-
-- 暫存目錄放在 `tests/` 下，使用 `_tmp_` 前綴
-- 在 `before` 或 `beforeEach` 建立，`after` 或 `afterEach` 清除
-
-```javascript
-const TMP_DIR = path.join(__dirname, '_tmp_mymodule');
-
-before(() => {
-  if (fs.existsSync(TMP_DIR)) fs.rmSync(TMP_DIR, { recursive: true });
-  // ... setup
-});
-
-after(() => {
-  if (fs.existsSync(TMP_DIR)) fs.rmSync(TMP_DIR, { recursive: true });
-});
-```
-
-#### Mock 物件
-
-依賴注入的模組用簡單的物件 mock，不需要 mock 框架：
-
-```javascript
-// 靜默 logger
-const logger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-
-// Mock fetcher（回傳固定資料）
-function mockRSS(items = []) {
-  return { fetchItems: async () => items };
-}
-
-// Mock with 呼叫追蹤
-let called = false;
-const mockLLM = {
-  summarize: async () => { called = true; return { summary: 'Mock', keyPoints: ['P1'] }; },
-};
-```
-
-#### 測試資料 factory
-
-重複使用的測試資料用 factory function，支援 override：
-
-```javascript
-function makeItem(overrides = {}) {
-  return {
-    source_type: 'youtube',
-    source_id: 'source-1',
-    item_id: 'vid-001',
-    title: 'Test Video',
-    // ...其他預設值
-    ...overrides,
-  };
-}
-
-// 使用
-db.insertContentItem(makeItem());
-db.insertContentItem(makeItem({ item_id: 'vid-002', title: 'Video 2' }));
-```
-
-#### 常用斷言
-
-```javascript
-assert.equal(a, b)             // 嚴格相等 (===)
-assert.deepEqual(a, b)         // 深度相等（物件/陣列）
-assert.ok(value)               // truthy
-assert.match(str, /regex/)     // 正規匹配
-assert.throws(() => fn())      // 同步拋錯
-await assert.rejects(() => asyncFn())  // 非同步拋錯
-```
-
-#### 需要網路的測試
-
-外部 API 測試用 try/catch 包裹，網路不可用時 graceful 跳過：
-
-```javascript
-describe('RSSFetcher (需要網路)', () => {
-  it('fetchItems() 應能解析真實 RSS feed', async () => {
-    let items;
-    try {
-      items = await fetcher.fetchItems(FEED_URL);
-    } catch {
-      return; // 網路不可用時跳過
-    }
-    assert.ok(items.length > 0);
-  });
-});
-```
-
-#### it 描述命名慣例
-
-- 用中文描述行為，格式：`{方法名}() {應/不應}{做什麼}`
-- 例：`it('getItems() 應回傳篩選後的結果')`
-- 例：`it('重複 item_id 插入應被忽略')`
-- 例：`it('無效 URL 應拋出錯誤')`
-
-## 專案結構
-- `src/` — 原始碼
-- `tests/` — 測試程式
-- `config/` — 設定檔
-- `doc/` — 文件
-- `data/` — 運行時資料 (git ignored)
-- `logs/` — 日誌 (git ignored)
+- **命名**: 用中文描述行為，格式 `{方法名}() {應/不應}{做什麼}`
+- **暫存目錄**: 放在 `tests/` 下，使用 `_tmp_` 前綴，在 `before`/`after` 中建立與清除
+- **Mock**: 用簡單物件 mock（依賴注入），不需 mock 框架
+- **網路測試**: 用 try/catch 包裹，網路不可用時 graceful 跳過
+- **參考範例**: 直接查看 `tests/` 下的現有測試檔案

@@ -106,22 +106,27 @@ describe('ConfigManager', () => {
     cm.load();
     cm.startWatching();
 
-    const changedPromise = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('changed 事件未在 3 秒內觸發')), 3000);
-      cm.on('changed', (newConfig, oldConfig) => {
-        clearTimeout(timer);
-        resolve({ newConfig, oldConfig });
+    try {
+      const changedPromise = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('changed 事件未在 5 秒內觸發')), 5000);
+        cm.on('changed', (newConfig, oldConfig) => {
+          // 忽略非預期的 spurious 事件（chokidar 可能因 metadata 變更而觸發）
+          if (newConfig.app.logLevel !== 'warn') return;
+          clearTimeout(timer);
+          resolve({ newConfig, oldConfig });
+        });
       });
-    });
 
-    await new Promise(r => setTimeout(r, 500));
-    const updated = { ...sampleConfig, app: { ...sampleConfig.app, logLevel: 'warn' } };
-    fs.writeFileSync(TMP_CONFIG, JSON.stringify(updated, null, 2));
+      await new Promise(r => setTimeout(r, 500));
+      const updated = { ...sampleConfig, app: { ...sampleConfig.app, logLevel: 'warn' } };
+      fs.writeFileSync(TMP_CONFIG, JSON.stringify(updated, null, 2));
 
-    const { newConfig, oldConfig } = await changedPromise;
-    assert.equal(newConfig.app.logLevel, 'warn');
-    assert.equal(oldConfig.app.logLevel, 'debug');
-    cm.stopWatching();
+      const { newConfig, oldConfig } = await changedPromise;
+      assert.equal(newConfig.app.logLevel, 'warn');
+      assert.equal(oldConfig.app.logLevel, 'debug');
+    } finally {
+      cm.stopWatching();
+    }
   });
 
   it('無效 JSON 應觸發 error 事件', async () => {
@@ -130,19 +135,22 @@ describe('ConfigManager', () => {
     cm.load();
     cm.startWatching();
 
-    const errorPromise = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('error 事件未在 3 秒內觸發')), 3000);
-      cm.on('error', (err) => {
-        clearTimeout(timer);
-        resolve(err);
+    try {
+      const errorPromise = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('error 事件未在 5 秒內觸發')), 5000);
+        cm.on('error', (err) => {
+          clearTimeout(timer);
+          resolve(err);
+        });
       });
-    });
 
-    await new Promise(r => setTimeout(r, 500));
-    fs.writeFileSync(TMP_CONFIG, '{ invalid json !!!');
+      await new Promise(r => setTimeout(r, 500));
+      fs.writeFileSync(TMP_CONFIG, '{ invalid json !!!');
 
-    const err = await errorPromise;
-    assert.ok(err instanceof Error);
-    cm.stopWatching();
+      const err = await errorPromise;
+      assert.ok(err instanceof Error);
+    } finally {
+      cm.stopWatching();
+    }
   });
 });

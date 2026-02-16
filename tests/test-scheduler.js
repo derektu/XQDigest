@@ -6,6 +6,7 @@ const DB = require('../src/database/db');
 const Storage = require('../src/storage');
 const DownloadQueue = require('../src/queue');
 const Scheduler = require('../src/scheduler');
+const { PermanentError } = require('../src/fetchers/youtube');
 
 const TMP_DIR = path.join(__dirname, '_tmp_scheduler');
 const DB_PATH = path.join(TMP_DIR, 'db', 'test.db');
@@ -400,20 +401,13 @@ describe('Scheduler', () => {
     assert.equal(failed.length, 1);
   });
 
-  it('摘要失敗後下次 checkNow() 應重試該項目', async () => {
+  it('暫時性失敗後同 session 的 checkNow() 不應重試該項目', async () => {
     const queue = new DownloadQueue({ concurrentLimit: 3, retryAttempts: 0 });
-    const completed = [];
     const failed = [];
-    queue.on('taskCompleted', (task) => completed.push(task.id));
     queue.on('taskFailed', (task) => failed.push(task.id));
 
-    let callCount = 0;
     const llmMock = {
-      summarize: async () => {
-        callCount++;
-        if (callCount === 1) throw new Error('LLM error');
-        return 'Summary OK';
-      },
+      summarize: async () => { throw new Error('LLM error'); },
     };
 
     const scheduler = new Scheduler({
@@ -425,25 +419,20 @@ describe('Scheduler', () => {
         getSourcePrompt: () => null,
       },
       queue, youtubeFetcher: mockYT(),
-      rssFetcher: mockRSS([{ itemId: 'retry-1', title: 'Retry', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
+      rssFetcher: mockRSS([{ itemId: 'transient-1', title: 'Transient', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: llmMock, storage: new Storage(db, TMP_DIR), db, logger,
     });
 
-    // First attempt: LLM fails, item not saved
+    // First attempt: LLM fails
     await scheduler.checkNow();
     await sleep(500);
-    assert.ok(!db.itemExists('retry-1'));
+    assert.ok(!db.itemExists('transient-1'));
     assert.equal(failed.length, 1);
 
-    // Second attempt: LLM succeeds, item saved
+    // Second attempt in same session: should NOT retry (still in _pendingItems)
     await scheduler.checkNow();
     await sleep(500);
-    assert.ok(db.itemExists('retry-1'));
-    assert.equal(completed.length, 1);
-
-    const item = db.getContentItemByItemId('retry-1');
-    assert.equal(item.status, 'processed');
-    assert.equal(item.summary, 'Summary OK');
+    assert.equal(failed.length, 1); // no additional failure
   });
 
   it('成功處理項目時應記錄完整 log 流程', async () => {
@@ -495,6 +484,68 @@ describe('Scheduler', () => {
     assert.ok(logs.error.some(m => m.includes('[FailSource]') && m.includes('Error processing') && m.includes('API timeout')));
     // Queue should log final failure
     assert.ok(logs.error.some(m => m.includes('Failed:') && m.includes('Error Item')));
+  });
+
+  it('PermanentError 應寫入 DB 且不再重試', async () => {
+    const queue = new DownloadQueue({ concurrentLimit: 3, retryAttempts: 0 });
+    const failed = [];
+    queue.on('taskFailed', (task) => failed.push(task.id));
+
+    const ytMock = {
+      fetchRecentVideos: async () => [
+        { videoId: 'nosub-1', title: 'No Sub', publishedDate: '2026-02-11', url: 'https://youtube.com/watch?v=nosub-1', author: 'Ch' },
+      ],
+      fetchTranscript: async () => { throw new PermanentError('no subtitles found'); },
+    };
+
+    const scheduler = new Scheduler({
+      configManager: mockConfigManager([
+        { id: 'yt-src', type: 'youtube', name: 'YT', url: 'https://youtube.com/@test', checkInterval: 9999, enabled: true },
+      ]),
+      queue, youtubeFetcher: ytMock, rssFetcher: mockRSS(),
+      llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
+    });
+
+    await scheduler.checkNow();
+    await sleep(500);
+
+    // Should be recorded as failed in DB
+    assert.equal(failed.length, 1);
+    assert.ok(db.isItemFailed('nosub-1'));
+    assert.ok(!db.itemExists('nosub-1')); // not in content_items
+
+    // Second check: should NOT retry (DB blocks it)
+    await scheduler.checkNow();
+    await sleep(500);
+    assert.equal(failed.length, 1); // no additional failure
+  });
+
+  it('PermanentError 失敗記錄應包含正確資訊', async () => {
+    const queue = new DownloadQueue({ concurrentLimit: 3, retryAttempts: 0 });
+
+    const ytMock = {
+      fetchRecentVideos: async () => [
+        { videoId: 'perm-info-1', title: 'Perm Fail', publishedDate: '2026-02-11', url: 'https://youtube.com/watch?v=perm-info-1', author: 'Ch' },
+      ],
+      fetchTranscript: async () => { throw new PermanentError('no subtitles found for perm-info-1'); },
+    };
+
+    const scheduler = new Scheduler({
+      configManager: mockConfigManager([
+        { id: 'yt-src2', type: 'youtube', name: 'YT2', url: 'https://youtube.com/@test2', checkInterval: 9999, enabled: true },
+      ]),
+      queue, youtubeFetcher: ytMock, rssFetcher: mockRSS(),
+      llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
+    });
+
+    await scheduler.checkNow();
+    await sleep(500);
+
+    const failedItems = db.getFailedItems({ sourceId: 'yt-src2' });
+    assert.equal(failedItems.length, 1);
+    assert.equal(failedItems[0].item_id, 'perm-info-1');
+    assert.equal(failedItems[0].title, 'Perm Fail');
+    assert.ok(failedItems[0].error_message.includes('no subtitles found'));
   });
 
   it('處理重試時應記錄 retry warn log', async () => {

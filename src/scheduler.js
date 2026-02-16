@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const Logger = require('./logger');
+const { PermanentError } = require('./fetchers/youtube');
 
 class Scheduler {
   constructor({ configManager, queue, youtubeFetcher, rssFetcher, llmService, storage, db, logger }) {
@@ -28,8 +29,25 @@ class Scheduler {
     });
 
     this.queue.on('taskFailed', (task, error) => {
-      this._pendingItems.delete(task.id);
-      this.logger.error(`Failed: "${task.name}" — ${error.message}`);
+      if (error instanceof PermanentError) {
+        // Permanent failure: record in DB, remove from pending (DB takes over dedup)
+        this._pendingItems.delete(task.id);
+        if (task.meta) {
+          const { source, item } = task.meta;
+          this.db.insertFailedItem({
+            source_type: item.sourceType,
+            source_id: item.sourceId,
+            item_id: item.itemId,
+            title: item.title,
+            url: item.url,
+            error_message: error.message,
+          });
+        }
+        this.logger.error(`Permanent failure: "${task.name}" — ${error.message}`);
+      } else {
+        // Transient failure: keep in _pendingItems so it won't retry this session
+        this.logger.error(`Failed: "${task.name}" — ${error.message}`);
+      }
     });
   }
 
@@ -138,7 +156,7 @@ class Scheduler {
       }
 
       // 3. Filter out already-seen items (DB) and items still being processed (queue)
-      const newItems = items.filter(item => !this.db.itemExists(item.itemId) && !this._pendingItems.has(item.itemId));
+      const newItems = items.filter(item => !this.db.itemExists(item.itemId) && !this.db.isItemFailed(item.itemId) && !this._pendingItems.has(item.itemId));
       if (newItems.length === 0) {
         this.logger.info(`[${source.name}] Fetched ${totalFetched}, ${afterLookback} within lookback, 0 new — nothing to process`);
         return;
@@ -152,6 +170,7 @@ class Scheduler {
         this.queue.addTask({
           id: item.itemId,
           name: item.title,
+          meta: { source, item },
           execute: () => this._processItem(source, item),
         });
       }

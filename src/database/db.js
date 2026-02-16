@@ -70,6 +70,34 @@ class DB {
     return !!row;
   }
 
+  // --- failed_items ---
+
+  insertFailedItem(item) {
+    const stmt = this.db.prepare(`
+      INSERT OR IGNORE INTO failed_items
+        (source_type, source_id, item_id, title, url, error_message)
+      VALUES
+        (@source_type, @source_id, @item_id, @title, @url, @error_message)
+    `);
+    return stmt.run(item);
+  }
+
+  isItemFailed(itemId) {
+    const row = this.db.prepare('SELECT 1 FROM failed_items WHERE item_id = ?').get(itemId);
+    return !!row;
+  }
+
+  getFailedItems({ sourceId } = {}) {
+    let sql = 'SELECT * FROM failed_items WHERE 1=1';
+    const params = {};
+    if (sourceId) {
+      sql += ' AND source_id = @sourceId';
+      params.sourceId = sourceId;
+    }
+    sql += ' ORDER BY created_at DESC';
+    return this.db.prepare(sql).all(params);
+  }
+
   // --- data_sources ---
 
   upsertDataSource(source) {

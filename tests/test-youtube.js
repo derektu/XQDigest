@@ -1,6 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const YouTubeFetcher = require('../src/fetchers/youtube');
+const { PermanentError } = require('../src/fetchers/youtube');
 
 const logger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 
@@ -91,6 +92,26 @@ describe('_parseVTT()', () => {
     ].join('\n');
     const text = fetcher._parseVTT(vtt);
     assert.equal(text, '重複文字 新文字');
+  });
+});
+
+describe('PermanentError', () => {
+  it('PermanentError 應為 Error 的子類別', () => {
+    const err = new PermanentError('test message');
+    assert.ok(err instanceof Error);
+    assert.ok(err instanceof PermanentError);
+    assert.equal(err.name, 'PermanentError');
+    assert.equal(err.message, 'test message');
+  });
+
+  it('fetchTranscript() 無字幕時應拋出 PermanentError', async () => {
+    const fetcher = new YouTubeFetcher(logger);
+    // Mock _runYtDlp to always reject (no subtitles)
+    fetcher._runYtDlp = async () => { throw new Error('no sub'); };
+    await assert.rejects(
+      () => fetcher.fetchTranscript('NO_SUB_VIDEO'),
+      (err) => err instanceof PermanentError && err.message.includes('no subtitles found'),
+    );
   });
 });
 

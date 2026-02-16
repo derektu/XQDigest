@@ -6,6 +6,13 @@ const path = require('node:path');
 
 const Logger = require('../logger');
 
+class PermanentError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'PermanentError';
+  }
+}
+
 const TRANSCRIPT_LANG_PRIORITY = ['zh-TW', 'zh-Hant', 'zh-Hans', 'zh-CN', 'en'];
 
 class YouTubeFetcher {
@@ -79,7 +86,7 @@ class YouTubeFetcher {
           fs.unlinkSync(path.join(tmpDir, f));
         }
       }
-      throw new Error(`yt-dlp: no subtitles found for ${videoId}`);
+      throw new PermanentError(`yt-dlp: no subtitles found for ${videoId}`);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -167,3 +174,4 @@ class YouTubeFetcher {
 }
 
 module.exports = YouTubeFetcher;
+module.exports.PermanentError = PermanentError;

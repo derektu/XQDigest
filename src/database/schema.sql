@@ -42,3 +42,15 @@ CREATE INDEX IF NOT EXISTS idx_content_items_source_id ON content_items(source_i
 CREATE INDEX IF NOT EXISTS idx_content_items_status ON content_items(status);
 CREATE INDEX IF NOT EXISTS idx_content_items_published_date ON content_items(published_date);
 CREATE INDEX IF NOT EXISTS idx_content_items_source_type ON content_items(source_type);
+
+CREATE TABLE IF NOT EXISTS failed_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_type TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  item_id TEXT UNIQUE NOT NULL,
+  title TEXT,
+  url TEXT,
+  error_message TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_failed_items_item_id ON failed_items(item_id);

@@ -39,6 +39,7 @@ describe('DB', () => {
     assert.ok(tables.includes('content_items'));
     assert.ok(tables.includes('data_sources'));
     assert.ok(tables.includes('llm_configs'));
+    assert.ok(tables.includes('failed_items'));
   });
 
   it('insertContentItem() 應成功插入一筆記錄', () => {
@@ -78,6 +79,47 @@ describe('DB', () => {
     assert.equal(db.getContentItems({ sourceType: 'rss' }).length, 1);
     assert.equal(db.getContentItems({ status: 'new' }).length, 2);
     assert.equal(db.getContentItems({ limit: 2 }).length, 2);
+  });
+
+  // --- failed_items ---
+
+  it('insertFailedItem() 應成功插入一筆失敗記錄', () => {
+    const result = db.insertFailedItem({
+      source_type: 'youtube', source_id: 'src-1', item_id: 'fail-001',
+      title: 'No Subtitles', url: 'https://youtube.com/watch?v=fail-001',
+      error_message: 'yt-dlp: no subtitles found',
+    });
+    assert.equal(result.changes, 1);
+  });
+
+  it('重複 item_id 失敗記錄應被忽略 (INSERT OR IGNORE)', () => {
+    const result = db.insertFailedItem({
+      source_type: 'youtube', source_id: 'src-1', item_id: 'fail-001',
+      title: 'No Subtitles', url: 'https://youtube.com/watch?v=fail-001',
+      error_message: 'yt-dlp: no subtitles found',
+    });
+    assert.equal(result.changes, 0);
+  });
+
+  it('isItemFailed() 應正確判斷', () => {
+    assert.equal(db.isItemFailed('fail-001'), true);
+    assert.equal(db.isItemFailed('nonexistent'), false);
+  });
+
+  it('getFailedItems() 應回傳所有失敗記錄', () => {
+    db.insertFailedItem({
+      source_type: 'rss', source_id: 'src-2', item_id: 'fail-002',
+      title: 'Another Fail', url: 'http://example.com/fail',
+      error_message: 'some error',
+    });
+    const all = db.getFailedItems();
+    assert.equal(all.length, 2);
+  });
+
+  it('getFailedItems({ sourceId }) 應可依來源篩選', () => {
+    const filtered = db.getFailedItems({ sourceId: 'src-1' });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].item_id, 'fail-001');
   });
 
   it('getStats() 應回傳正確統計', () => {

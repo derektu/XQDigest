@@ -4,11 +4,12 @@
   "description": "XQDigest - 財經資訊自動摘要工具",
   "main": "electron/main.js",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "npm run node:rebuild && node src/index.js",
+    "node:rebuild": "npm rebuild better-sqlite3",
     "electron": "electron .",
     "electron:rebuild": "electron-rebuild -f -w better-sqlite3",
     "electron:start": "npm run electron:rebuild && electron .",
-    "test": "node --test tests/test-*.js"
+    "test": "npm run node:rebuild && node --test tests/test-*.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

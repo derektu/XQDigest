@@ -82,12 +82,12 @@ npm start
 ### Electron 桌面模式
 
 ```bash
-# 首次或 better-sqlite3 需要 rebuild 時
 npm run electron:start
-
-# 開發用（跳過 native module rebuild）
-npm run electron
 ```
+
+> **注意：CLI 與 Electron 模式使用不同的 Node ABI。**
+> `npm start` 和 `npm run electron:start` 會自動 rebuild native module（`better-sqlite3`）至對應的 ABI，可以自由切換。
+> 如果確定 native module 已經是正確的 ABI，可用 `node src/index.js` 或 `npm run electron` 跳過 rebuild 加速啟動。
 
 啟動後會常駐於系統匣（macOS menu bar / Windows 工作列），透過右鍵選單控制：
 

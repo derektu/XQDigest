@@ -37,6 +37,17 @@ class Logger {
     if (this.stream) return;
     fs.mkdirSync(this.logDir, { recursive: true });
     const filePath = path.join(this.logDir, this.logFile);
+    // 啟動時檢查：若現有 log 檔的最後修改日期不是今天，先 rotate
+    if (fs.existsSync(filePath)) {
+      const stat = fs.statSync(filePath);
+      const mtime = stat.mtime;
+      const fileDate = `${mtime.getFullYear()}-${String(mtime.getMonth() + 1).padStart(2, '0')}-${String(mtime.getDate()).padStart(2, '0')}`;
+      if (fileDate !== this.currentDate) {
+        const rotatedPath = path.join(this.logDir, `${this.logFile}.${fileDate}`);
+        fs.renameSync(filePath, rotatedPath);
+        this._cleanOldLogs();
+      }
+    }
     this.stream = fs.createWriteStream(filePath, { flags: 'a' });
   }
 

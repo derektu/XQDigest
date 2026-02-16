@@ -170,6 +170,36 @@ describe('Logger', () => {
     assert.ok(rotatedContent.includes('before rotation'));
   });
 
+  it('啟動時若 log 檔為舊日期應自動 rotate', async () => {
+    fs.mkdirSync(TMP_LOG_DIR, { recursive: true });
+    const logPath = path.join(TMP_LOG_DIR, LOG_FILE);
+
+    // 模擬昨天留下的 log 檔
+    fs.writeFileSync(logPath, 'old log from yesterday\n');
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    fs.utimesSync(logPath, yesterday, yesterday);
+
+    // 建立新 Logger（今天），首次寫入應觸發 rotate
+    const logger = new Logger({ level: 'info', logDir: TMP_LOG_DIR, logFile: LOG_FILE });
+    logger.info('today entry');
+    logger.close();
+    await new Promise(r => setTimeout(r, 200));
+
+    // 舊 log 應被搬到 app.log.<昨天日期>
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const rotatedPath = path.join(TMP_LOG_DIR, `${LOG_FILE}.${yesterdayStr}`);
+    assert.ok(fs.existsSync(rotatedPath), `Rotated file ${LOG_FILE}.${yesterdayStr} should exist`);
+
+    const rotatedContent = fs.readFileSync(rotatedPath, 'utf8');
+    assert.ok(rotatedContent.includes('old log from yesterday'));
+
+    // 今天的 log 檔只有今天的 entry
+    const currentContent = readLogFile();
+    assert.ok(currentContent.includes('today entry'));
+    assert.ok(!currentContent.includes('old log from yesterday'));
+  });
+
   it('超過 retentionDays 的舊 log 應被刪除', async () => {
     fs.mkdirSync(TMP_LOG_DIR, { recursive: true });
 

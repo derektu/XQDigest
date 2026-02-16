@@ -17,14 +17,31 @@
 
 ## 環境需求
 
-- Node.js >= 18
+- Node.js >= 20
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)（YouTube 字幕下載）
+- C/C++ 編譯工具（`better-sqlite3` 為 native module，需要編譯）
+
+### macOS
 
 ```bash
-# macOS
+# yt-dlp
 brew install yt-dlp
+```
 
-# 或透過 pip
+### Windows
+
+```bash
+# yt-dlp — 從 GitHub Releases 下載 yt-dlp.exe 並加入 PATH
+# https://github.com/yt-dlp/yt-dlp/releases
+```
+
+### Linux
+
+```bash
+# Debian/Ubuntu
+sudo apt install build-essential python3
+
+# yt-dlp
 pip install yt-dlp
 ```
 

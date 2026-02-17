@@ -4,7 +4,10 @@ async function main() {
   const engine = new AppEngine();
 
   // Graceful shutdown
+  let stopping = false;
   const shutdown = () => {
+    if (stopping) return;
+    stopping = true;
     engine.stop().then(() => {
       process.exit(0);
     }).catch(() => {

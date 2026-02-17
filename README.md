@@ -135,7 +135,7 @@ electron/
 └── icons/
     ├── iconTemplate.png   # macOS template image（16x16）
     ├── iconTemplate@2x.png # macOS Retina
-    └── icon.png           # Windows/Linux（32x32）
+    └── icon-win.png       # Windows/Linux（32x32）
 ```
 
 ## 文件

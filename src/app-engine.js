@@ -90,7 +90,7 @@ class AppEngine extends EventEmitter {
         this._logger.debug(`Queue: added "${task.name}" (pending: ${status.pending}, active: ${status.active})`);
       });
       this._queue.on('taskStarted', (task, status) => {
-        this._logger.debug(`Queue: started "${task.name}" (active: ${status.active}/${downloadConfig.concurrentLimit})`);
+        this._logger.debug(`Queue: started "${task.name}" (active: ${status.active}/${this._queue.concurrentLimit})`);
       });
       this._queue.on('taskCompleted', (task, status) => {
         this._logger.debug(`Queue: completed "${task.name}" (pending: ${status.pending}, active: ${status.active}, completed: ${status.completed})`);
@@ -130,10 +130,26 @@ class AppEngine extends EventEmitter {
 
       this._setState(STATES.RUNNING);
     } catch (err) {
+      await this._safeCleanup();
       this._setState(STATES.STOPPED);
       this.emit('error', err);
       throw err;
     }
+  }
+
+  async _safeCleanup() {
+    try { if (this._scheduler) this._scheduler.stop(); } catch (_) {}
+    try { if (this._queue) { this._queue.stop(); await this._queue.drain(); } } catch (_) {}
+    try { if (this._configManager) { this._configManager.stopWatching(); this._configManager.removeAllListeners(); } } catch (_) {}
+    try { if (this._db) this._db.close(); } catch (_) {}
+    try { Logger.close(); } catch (_) {}
+    this._configManager = null;
+    this._logger = null;
+    this._db = null;
+    this._storage = null;
+    this._queue = null;
+    this._scheduler = null;
+    this._llmService = null;
   }
 
   async stop() {
@@ -149,6 +165,10 @@ class AppEngine extends EventEmitter {
       }
       if (this._scheduler) {
         this._scheduler.stop();
+      }
+      if (this._queue) {
+        this._queue.stop();
+        await this._queue.drain();
       }
       if (this._configManager) {
         this._configManager.stopWatching();

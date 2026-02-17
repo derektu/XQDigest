@@ -1,4 +1,3 @@
-const cron = require('node-cron');
 const Logger = require('./logger');
 const { PermanentError } = require('./fetchers/youtube');
 
@@ -45,7 +44,8 @@ class Scheduler {
         }
         this.logger.error(`Permanent failure: "${task.name}" — ${error.message}`);
       } else {
-        // Transient failure: keep in _pendingItems so it won't retry this session
+        // Transient failure: remove from _pendingItems so next schedule cycle can retry
+        this._pendingItems.delete(task.id);
         this.logger.error(`Failed: "${task.name}" — ${error.message}`);
       }
     });
@@ -102,8 +102,6 @@ class Scheduler {
 
     for (const source of sources) {
       const intervalSec = source.checkInterval || 3600;
-      // Convert seconds to a cron-compatible interval
-      // node-cron doesn't support arbitrary seconds, so we use setInterval for flexibility
       const intervalMs = intervalSec * 1000;
 
       // Run initial check after a short delay
@@ -150,13 +148,21 @@ class Scheduler {
       }
       const afterLookback = items.length;
 
-      // 2. Keep only the newest maxItems (before DB dedup, so total never exceeds maxItems)
+      // 2. Sort by date (newest first) then keep only maxItems
+      items.sort((a, b) => new Date(b.publishedDate) - new Date(a.publishedDate));
       if (source.maxItems && items.length > source.maxItems) {
         items = items.slice(0, source.maxItems);
       }
 
       // 3. Filter out already-seen items (DB) and items still being processed (queue)
-      const newItems = items.filter(item => !this.db.itemExists(item.itemId) && !this.db.isItemFailed(item.itemId) && !this._pendingItems.has(item.itemId));
+      //    Add to _pendingItems immediately during filter to prevent concurrent _checkSource() from double-enqueuing
+      const newItems = items.filter(item => {
+        if (this.db.itemExists(item.itemId) || this.db.isItemFailed(item.itemId) || this._pendingItems.has(item.itemId)) {
+          return false;
+        }
+        this._pendingItems.add(item.itemId);
+        return true;
+      });
       if (newItems.length === 0) {
         this.logger.info(`[${source.name}] Fetched ${totalFetched}, ${afterLookback} within lookback, 0 new — nothing to process`);
         return;
@@ -166,7 +172,6 @@ class Scheduler {
 
       // Add each new item to the download queue
       for (const item of newItems) {
-        this._pendingItems.add(item.itemId);
         this.queue.addTask({
           id: item.itemId,
           name: item.title,

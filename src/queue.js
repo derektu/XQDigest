@@ -20,9 +20,12 @@ class DownloadQueue extends EventEmitter {
     this.active = [];      // in-progress tasks
     this.completed = [];   // done tasks
     this.failed = [];      // permanently failed tasks
+    this._retryTimers = []; // pending retry setTimeout IDs
+    this._stopped = false;
   }
 
   addTask(task) {
+    if (this._stopped) return;
     task.retryCount = task.retryCount || 0;
     task.maxRetries = task.maxRetries ?? this.retryAttempts;
     this.queue.push(task);
@@ -31,6 +34,7 @@ class DownloadQueue extends EventEmitter {
   }
 
   _processQueue() {
+    if (this._stopped) return;
     while (this.queue.length > 0 && this.active.length < this.concurrentLimit) {
       const task = this.queue.shift();
       this.active.push(task);
@@ -53,6 +57,7 @@ class DownloadQueue extends EventEmitter {
     if (idx !== -1) this.active.splice(idx, 1);
     task.result = result;
     this.completed.push(task);
+    if (this.completed.length > 1000) this.completed.splice(0, this.completed.length - 500);
     this.emit('taskCompleted', task, this.getStatus());
     this._processQueue();
   }
@@ -65,13 +70,17 @@ class DownloadQueue extends EventEmitter {
       task.retryCount++;
       const delay = this.retryDelay * Math.pow(2, task.retryCount - 1);
       this.emit('taskRetry', task, task.retryCount, delay, this.getStatus());
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        const idx = this._retryTimers.indexOf(timer);
+        if (idx !== -1) this._retryTimers.splice(idx, 1);
         this.queue.unshift(task);
         this._processQueue();
       }, delay);
+      this._retryTimers.push(timer);
     } else {
       task.error = error;
       this.failed.push(task);
+      if (this.failed.length > 1000) this.failed.splice(0, this.failed.length - 500);
       this.emit('taskFailed', task, error, this.getStatus());
       this._processQueue();
     }
@@ -84,6 +93,38 @@ class DownloadQueue extends EventEmitter {
       completed: this.completed.length,
       failed: this.failed.length,
     };
+  }
+
+  /**
+   * Stop accepting new tasks and cancel pending retries.
+   * Active tasks continue running until completion.
+   */
+  stop() {
+    this._stopped = true;
+    this.queue = [];
+    for (const timer of this._retryTimers) {
+      clearTimeout(timer);
+    }
+    this._retryTimers = [];
+  }
+
+  /**
+   * Returns a promise that resolves when all active tasks finish.
+   * Call stop() first to prevent new tasks from being added.
+   */
+  drain() {
+    if (this.active.length === 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      const check = () => {
+        if (this.active.length === 0) {
+          this.removeListener('taskCompleted', check);
+          this.removeListener('taskFailed', check);
+          resolve();
+        }
+      };
+      this.on('taskCompleted', check);
+      this.on('taskFailed', check);
+    });
   }
 
   updateConcurrentLimit(newLimit) {

@@ -7,9 +7,10 @@
     "start": "npm run node:rebuild && node src/index.js",
     "node:rebuild": "npm rebuild better-sqlite3",
     "electron": "electron .",
-    "electron:rebuild": "electron-rebuild -f -w better-sqlite3",
+    "electron:rebuild": "cd node_modules/better-sqlite3 && npx node-gyp rebuild --runtime=electron --target=$(npx electron --version | tr -d v) --dist-url=https://electronjs.org/headers",
     "electron:start": "npm run electron:rebuild && npm run electron",
-    "test": "npm run node:rebuild && node --test tests/test-*.js"
+    "test": "npm run node:rebuild && node --test tests/test-*.js",
+    "test:integration": "npm run node:rebuild && node --test tests/integration-*.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
@@ -18,7 +19,6 @@
     "chokidar": "^3.6.0",
     "fs-extra": "^11.2.0",
     "gray-matter": "^4.0.3",
-    "node-cron": "^3.0.3",
     "openai": "^4.20.0",
     "rss-parser": "^3.13.0"
   },

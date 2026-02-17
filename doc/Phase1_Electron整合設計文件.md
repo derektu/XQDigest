@@ -199,14 +199,14 @@ new TrayManager(engine)
 | 平台 | 圖示檔 | 處理方式 |
 |------|--------|----------|
 | macOS | `iconTemplate.png` / `iconTemplate@2x.png` | `setTemplateImage(true)` — 系統自動適配深色/淺色選單列 |
-| Windows/Linux | `icon.png` (32x32) | 直接使用，白色圖示適用深色工作列 |
+| Windows/Linux | `icon-win.png` (32x32) | 直接使用，白色圖示適用深色工作列 |
 
 **`_getIconPath()` 邏輯**:
 ```javascript
 if (process.platform === 'darwin') {
   return 'iconTemplate.png';   // macOS template image 機制
 } else {
-  return 'icon.png';           // Windows/Linux 一般圖示
+  return 'icon-win.png';       // Windows/Linux 一般圖示
 }
 ```
 
@@ -317,7 +317,7 @@ XQDigest/
 │   └── icons/
 │       ├── iconTemplate.png   ← 新增：macOS 圖示 (16x16)
 │       ├── iconTemplate@2x.png ← 新增：macOS Retina (32x32)
-│       └── icon.png           ← 新增：Windows/Linux 圖示 (32x32)
+│       └── icon-win.png       ← 新增：Windows/Linux 圖示 (32x32)
 ├── tests/
 │   └── test-app-engine.js     ← 新增：AppEngine 測試
 └── package.json               ← 修改：新增 electron scripts + devDependencies

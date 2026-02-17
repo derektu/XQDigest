@@ -99,6 +99,24 @@ describe('Storage', () => {
     assert.equal(dbItem.status, 'processed');
   });
 
+  it('updateSummary() 重複呼叫應覆蓋而非重複追加', async () => {
+    const item = {
+      sourceType: 'youtube', sourceId: 'source-1', itemId: 'idempotent-1',
+      title: '冪等測試', url: 'https://youtube.com/watch?v=idempotent-1',
+      author: 'Test', publishedDate: '2026-02-11T10:00:00Z', content: '原始內容',
+    };
+    await storage.saveContent(item);
+    await storage.updateSummary(item, '第一次摘要');
+    await storage.updateSummary(item, '第二次摘要');
+
+    const relativePath = storage._getRelativePath(item);
+    const content = fs.readFileSync(path.join(TMP_DIR, 'content', relativePath), 'utf8');
+    const matches = content.match(/## AI 摘要/g);
+    assert.equal(matches.length, 1, '應只有一個 AI 摘要區塊');
+    assert.ok(content.includes('第二次摘要'), '應包含最新摘要');
+    assert.ok(!content.includes('第一次摘要'), '不應包含舊摘要');
+  });
+
   it('自訂 contentFormatter 應覆蓋預設格式', async () => {
     const customStorage = new Storage(db, TMP_DIR, {
       contentFormatters: {

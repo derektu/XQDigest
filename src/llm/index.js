@@ -79,7 +79,7 @@ class LLMService {
       }
 
       // Built-in default prompt uses JSON wrapper — extract summary field
-      const parsed = this.provider._parseJSON(response);
+      const parsed = this._parseJSON(response);
       const extracted = parsed.summary || parsed.raw || response;
       const summaryText = typeof extracted === 'string' ? extracted : JSON.stringify(extracted, null, 2);
 
@@ -88,6 +88,19 @@ class LLMService {
     } catch (err) {
       this.logger.error(`LLM summarize failed for "${title}": ${err.message}`);
       throw err;
+    }
+  }
+
+  _parseJSON(text) {
+    // Strip markdown code fences if present
+    let cleaned = text.trim();
+    const fenceMatch = cleaned.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+    if (fenceMatch) cleaned = fenceMatch[1].trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch (err) {
+      this.logger.warn(`JSON parse failed, returning raw text: ${err.message}`);
+      return { raw: text };
     }
   }
 

@@ -114,6 +114,38 @@ describe('AppEngine', () => {
     await engine.stop();
   });
 
+  it('start() 失敗時應清理已建立的資源', async () => {
+    writeConfig();
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+
+    // Monkey-patch DB.prototype.open to throw after real open succeeds
+    const DB = require('../src/database/db');
+    const origOpen = DB.prototype.open;
+    let openCalled = false;
+    DB.prototype.open = function () {
+      origOpen.call(this); // actually open DB
+      openCalled = true;
+      throw new Error('simulated init failure');
+    };
+
+    try {
+      await assert.rejects(
+        () => engine.start(),
+        { message: /simulated init failure/ },
+      );
+      assert.ok(openCalled, 'DB.open should have been called');
+      // After failed start, state should be stopped
+      assert.equal(engine.getState(), 'stopped');
+      // Verify cleanup worked: engine can be started again successfully
+      DB.prototype.open = origOpen;
+      await engine.start();
+      assert.equal(engine.getState(), 'running');
+      await engine.stop();
+    } finally {
+      DB.prototype.open = origOpen;
+    }
+  });
+
   it('stateChange 事件應包含新舊狀態', async () => {
     writeConfig();
     const engine = new AppEngine({ configPath: CONFIG_PATH });

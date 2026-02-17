@@ -31,19 +31,6 @@ class BaseLLMProvider {
     throw new Error('chatCompletion() must be implemented by subclass');
   }
 
-  /**
-   * Safely parse JSON response text.
-   * @param {string} text - Raw response text
-   * @returns {Object} Parsed JSON or { raw: text } on failure
-   */
-  _parseJSON(text) {
-    try {
-      return JSON.parse(text);
-    } catch (err) {
-      this.logger.warn(`JSON parse failed, returning raw text: ${err.message}`);
-      return { raw: text };
-    }
-  }
 }
 
 module.exports = BaseLLMProvider;

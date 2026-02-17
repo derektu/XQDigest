@@ -66,18 +66,6 @@ describe('BaseLLMProvider', () => {
     );
   });
 
-  it('_parseJSON() 應正確解析 JSON 字串', () => {
-    const base = new BaseLLMProvider({ model: 'test' }, logger);
-    const result = base._parseJSON('{"summary":"hello","keyPoints":["a","b"]}');
-    assert.equal(result.summary, 'hello');
-    assert.deepEqual(result.keyPoints, ['a', 'b']);
-  });
-
-  it('_parseJSON() 無效 JSON 應回傳 { raw: text }', () => {
-    const base = new BaseLLMProvider({ model: 'test' }, logger);
-    const result = base._parseJSON('not json');
-    assert.equal(result.raw, 'not json');
-  });
 });
 
 describe('OpenAIProvider', () => {
@@ -238,5 +226,25 @@ describe('LLMService', () => {
       () => svc.summarize('content', 'Title'),
       /API error/
     );
+  });
+
+  it('summarize() 應處理 markdown code fence 包裹的 JSON', async () => {
+    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
+    svc.provider.chatCompletion = async () => '```json\n{"summary":"fenced summary"}\n```';
+
+    const result = await svc.summarize('content', 'Title');
+    assert.equal(result, 'fenced summary');
+  });
+
+  it('_parseJSON() 應正確解析 JSON 字串', () => {
+    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
+    const result = svc._parseJSON('{"summary":"hello"}');
+    assert.equal(result.summary, 'hello');
+  });
+
+  it('_parseJSON() 無效 JSON 應回傳 { raw: text }', () => {
+    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
+    const result = svc._parseJSON('not json');
+    assert.equal(result.raw, 'not json');
   });
 });

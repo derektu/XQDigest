@@ -154,4 +154,28 @@ describe('DownloadQueue', () => {
     await sleep(200);
     assert.equal(queue.isEmpty, true);
   });
+
+  it('stop() 應停止接受新任務並取消 pending retries', async () => {
+    const queue = new DownloadQueue({ concurrentLimit: 1, retryAttempts: 2, retryDelay: 100 });
+    let execCount = 0;
+    queue.addTask({ id: 'stop-1', execute: async () => { execCount++; throw new Error('fail'); } });
+    // Wait for first attempt + first retry timer to be set
+    await sleep(200);
+    queue.stop();
+    // After stop, no more retries should fire and new tasks are rejected
+    queue.addTask({ id: 'stop-2', execute: async () => { execCount = 999; } });
+    await sleep(500);
+    assert.ok(execCount < 5, 'should not have continued retrying after stop');
+    assert.equal(queue.queue.length, 0, 'pending queue should be empty after stop');
+  });
+
+  it('drain() 應等待所有 active 任務完成', async () => {
+    const queue = new DownloadQueue({ concurrentLimit: 2 });
+    const completed = [];
+    queue.addTask({ id: 'd1', execute: () => sleep(100).then(() => { completed.push('d1'); }) });
+    queue.addTask({ id: 'd2', execute: () => sleep(150).then(() => { completed.push('d2'); }) });
+    queue.stop(); // Stop accepting new tasks
+    await queue.drain(); // Wait for active tasks to finish
+    assert.deepEqual(completed.sort(), ['d1', 'd2']);
+  });
 });

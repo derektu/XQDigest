@@ -98,26 +98,6 @@ class DB {
     return this.db.prepare(sql).all(params);
   }
 
-  // --- data_sources ---
-
-  upsertDataSource(source) {
-    const stmt = this.db.prepare(`
-      INSERT INTO data_sources (source_type, source_name, source_url, check_interval, is_active)
-      VALUES (@source_type, @source_name, @source_url, @check_interval, @is_active)
-      ON CONFLICT(rowid) DO UPDATE SET
-        source_name = @source_name,
-        source_url = @source_url,
-        check_interval = @check_interval,
-        is_active = @is_active
-    `);
-    return stmt.run(source);
-  }
-
-  updateLastCheck(sourceId) {
-    // sourceId here refers to the data_sources table id
-    this.db.prepare('UPDATE data_sources SET last_check = CURRENT_TIMESTAMP WHERE id = ?').run(sourceId);
-  }
-
   // --- stats ---
 
   getStats() {

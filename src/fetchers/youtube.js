@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const RssParser = require('rss-parser');
 const Logger = require('../logger');
 
 class PermanentError extends Error {
@@ -24,6 +25,7 @@ class YouTubeFetcher {
 
   constructor(logger) {
     this.logger = logger || Logger.getLogger('YouTubeFetcher');
+    this._rssParser = new RssParser();
   }
 
   /**
@@ -43,9 +45,7 @@ class YouTubeFetcher {
     }
 
     const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
-    const RssParser = require('rss-parser');
-    const parser = new RssParser();
-    const feed = await parser.parseURL(feedUrl);
+    const feed = await this._rssParser.parseURL(feedUrl);
 
     return feed.items.map(item => ({
       videoId: this._extractVideoId(item.link),
@@ -164,12 +164,9 @@ class YouTubeFetcher {
   _extractVideoId(url) {
     const match = url.match(/[?&]v=([a-zA-Z0-9_-]+)/);
     if (match) return match[1];
-    // YouTube Shorts format: /shorts/ID
     const shorts = url.match(/\/shorts\/([a-zA-Z0-9_-]+)/);
     if (shorts) return shorts[1];
-    // yt:video:ID format from RSS
-    const match2 = url.match(/\/watch\?v=([a-zA-Z0-9_-]+)/);
-    return match2 ? match2[1] : url;
+    return url;
   }
 }
 

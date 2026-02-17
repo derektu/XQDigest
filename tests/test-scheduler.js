@@ -401,13 +401,18 @@ describe('Scheduler', () => {
     assert.equal(failed.length, 1);
   });
 
-  it('暫時性失敗後同 session 的 checkNow() 不應重試該項目', async () => {
+  it('暫時性失敗後下次排程應可重試該項目', async () => {
     const queue = new DownloadQueue({ concurrentLimit: 3, retryAttempts: 0 });
     const failed = [];
     queue.on('taskFailed', (task) => failed.push(task.id));
 
+    let llmCallCount = 0;
     const llmMock = {
-      summarize: async () => { throw new Error('LLM error'); },
+      summarize: async () => {
+        llmCallCount++;
+        if (llmCallCount === 1) throw new Error('LLM error');
+        return 'summary';
+      },
     };
 
     const scheduler = new Scheduler({
@@ -429,10 +434,11 @@ describe('Scheduler', () => {
     assert.ok(!db.itemExists('transient-1'));
     assert.equal(failed.length, 1);
 
-    // Second attempt in same session: should NOT retry (still in _pendingItems)
+    // Second attempt: transient failure released from _pendingItems, should retry and succeed
     await scheduler.checkNow();
     await sleep(500);
-    assert.equal(failed.length, 1); // no additional failure
+    assert.ok(db.itemExists('transient-1'));
+    assert.equal(llmCallCount, 2);
   });
 
   it('成功處理項目時應記錄完整 log 流程', async () => {

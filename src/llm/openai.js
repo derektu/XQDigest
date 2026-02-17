@@ -43,7 +43,11 @@ class OpenAIProvider extends BaseLLMProvider {
     }
 
     const response = await this.client.chat.completions.create(requestOptions);
-    return response.choices[0]?.message?.content || '';
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('LLM returned empty response (content filtered or null)');
+    }
+    return content;
   }
 }
 

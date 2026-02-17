@@ -59,9 +59,15 @@ class Storage {
     const fullPath = path.join(this.contentDir, relativePath);
     let content = await fs.readFile(fullPath, 'utf8');
 
-    // Append summary section (raw text, format determined by prompt)
-    const summarySection = `\n## AI 摘要\n\n${summaryText}\n`;
-    content += summarySection;
+    // Replace or append summary section (idempotent on retry)
+    const summaryHeading = '\n## AI 摘要\n\n';
+    const summarySection = `${summaryHeading}${summaryText}\n`;
+    const headingIndex = content.indexOf(summaryHeading);
+    if (headingIndex !== -1) {
+      content = content.substring(0, headingIndex) + summarySection;
+    } else {
+      content += summarySection;
+    }
     await fs.writeFile(fullPath, content, 'utf8');
 
     // Update database

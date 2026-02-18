@@ -66,13 +66,73 @@ function createMockEngine() {
     checkSource: async (id) => schedulerActions.push({ action: 'check', id }),
   };
 
+  // Mock DB for content endpoints
+  let nextContentId = 1;
+  const contentItems = new Map();
+
+  function addContentItem(fields) {
+    const id = nextContentId++;
+    const item = {
+      id,
+      source_type: 'youtube',
+      source_id: 'src-1',
+      source_name: 'Test Channel',
+      item_id: `item-${id}`,
+      title: `Item ${id}`,
+      url: `https://example.com/${id}`,
+      author: 'Author',
+      published_date: '2026-02-18T10:00:00Z',
+      summary: '## Summary\n\nThis is a summary.',
+      is_read: 0,
+      status: 'processed',
+      ...fields,
+    };
+    contentItems.set(id, item);
+    return item;
+  }
+
+  const db = {
+    getContentItems: ({ status, sourceId, limit = 20, offset = 0 } = {}) => {
+      let items = Array.from(contentItems.values());
+      if (status) items = items.filter(i => i.status === status);
+      if (sourceId) items = items.filter(i => i.source_id === sourceId);
+      return items.slice(offset, offset + limit).map(i => ({
+        ...i,
+        summary: i.summary ? i.summary.slice(0, 300) : null,
+      }));
+    },
+    db: {
+      prepare: (sql) => ({
+        get: (id) => {
+          const item = contentItems.get(id);
+          return item || null;
+        },
+      }),
+    },
+    markContentRead: (id, isRead) => {
+      const item = contentItems.get(id);
+      if (item) item.is_read = isRead ? 1 : 0;
+    },
+    getUnreadCounts: () => {
+      const processed = Array.from(contentItems.values()).filter(i => i.status === 'processed' && i.is_read === 0);
+      const bySource = {};
+      for (const item of processed) {
+        bySource[item.source_id] = (bySource[item.source_id] || 0) + 1;
+      }
+      return { all: processed.length, bySource };
+    },
+    _addContentItem: addContentItem,
+  };
+
   return {
     getState: () => 'running',
     getStatus: () => ({ state: 'running', dataSources: sources.size, llmConfigured: false }),
     getDataSourceManager: () => mgr,
     getScheduler: () => scheduler,
+    getDB: () => db,
     _mgr: mgr,
     _schedulerActions: schedulerActions,
+    _db: db,
   };
 }
 
@@ -83,6 +143,7 @@ function createStoppedEngine() {
     getStatus: () => ({ state: 'stopped', dataSources: 0, llmConfigured: false }),
     getDataSourceManager: () => null,
     getScheduler: () => null,
+    getDB: () => null,
   };
 }
 
@@ -166,6 +227,40 @@ describe('ApiServer', () => {
     const res = await makeRequest(port, 'GET', '/api/nonexistent');
     assert.equal(res.status, 404);
     assert.equal(res.body.error, 'Not Found');
+  });
+
+  it('GET /api/content/unread-counts 應回傳未讀統計', async () => {
+    // Add a content item to the mock db
+    engine._db._addContentItem({ id: 10, title: 'News', status: 'processed', is_read: 0, source_id: 'src-1' });
+    const res = await makeRequest(port, 'GET', '/api/content/unread-counts');
+    assert.equal(res.status, 200);
+    assert.ok(typeof res.body.all === 'number');
+    assert.ok(typeof res.body.bySource === 'object');
+  });
+
+  it('GET /api/content 應回傳內容列表', async () => {
+    const res = await makeRequest(port, 'GET', '/api/content');
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(res.body));
+  });
+
+  it('GET /api/content?sourceId=src-1 應依來源篩選', async () => {
+    const res = await makeRequest(port, 'GET', '/api/content?sourceId=src-1');
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(res.body));
+    assert.ok(res.body.every(item => item.source_id === 'src-1'));
+  });
+
+  it('GET /api/content/:id 不存在時應回傳 404', async () => {
+    const res = await makeRequest(port, 'GET', '/api/content/99999');
+    assert.equal(res.status, 404);
+  });
+
+  it('PATCH /api/content/:id/read 應標記已讀', async () => {
+    const item = engine._db._addContentItem({ title: 'Readable', status: 'processed' });
+    const res = await makeRequest(port, 'PATCH', `/api/content/${item.id}/read`, { is_read: 1 });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
   });
 });
 

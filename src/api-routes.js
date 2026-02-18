@@ -37,8 +37,82 @@ function createRoutes(engine) {
     return scheduler;
   }
 
+  function getDB() {
+    const db = engine.getDB();
+    if (!db) {
+      const err = new Error('Engine not running');
+      err.statusCode = 503;
+      throw err;
+    }
+    return db;
+  }
+
   return [
     // Literal routes BEFORE parametric routes
+    {
+      method: 'GET',
+      pattern: '/api/content/unread-counts',
+      handler: () => {
+        const db = engine.getDB();
+        if (!db) return { data: { all: 0, bySource: {} } };
+        return { data: db.getUnreadCounts() };
+      },
+    },
+    {
+      method: 'GET',
+      pattern: '/api/content',
+      handler: (params) => {
+        const db = engine.getDB();
+        if (!db) return { data: [] };
+        const sourceId = params.sourceId || undefined;
+        const limit = Math.min(parseInt(params.limit) || 20, 100);
+        const offset = parseInt(params.offset) || 0;
+        const items = db.getContentItems({ status: 'processed', sourceId, limit, offset });
+        return {
+          data: items.map(item => ({
+            id: item.id,
+            title: item.title,
+            author: item.author,
+            published_date: item.published_date,
+            source_id: item.source_id,
+            source_name: item.source_name,
+            source_type: item.source_type,
+            summary: item.summary ? item.summary.slice(0, 300) : null,
+            is_read: item.is_read,
+            url: item.url,
+          })),
+        };
+      },
+    },
+    {
+      method: 'GET',
+      pattern: '/api/content/:id',
+      handler: (params) => {
+        const db = getDB();
+        const row = db.db.prepare(
+          `SELECT ci.*, ds.source_name
+           FROM content_items ci
+           LEFT JOIN data_sources ds ON ci.source_id = ds.id
+           WHERE ci.id = ?`
+        ).get(parseInt(params.id));
+        if (!row) {
+          const err = new Error('Not Found');
+          err.statusCode = 404;
+          throw err;
+        }
+        return { data: row };
+      },
+    },
+    {
+      method: 'PATCH',
+      pattern: '/api/content/:id/read',
+      handler: (params, body) => {
+        const db = getDB();
+        const isRead = (body && body.is_read !== undefined) ? body.is_read : 1;
+        db.markContentRead(parseInt(params.id), isRead);
+        return { data: { ok: true } };
+      },
+    },
     {
       method: 'GET',
       pattern: '/api/datasources',

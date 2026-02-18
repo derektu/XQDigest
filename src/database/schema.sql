@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS content_items (
   summary TEXT,
   tags TEXT,
   status TEXT DEFAULT 'new',
+  is_read INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

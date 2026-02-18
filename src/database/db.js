@@ -48,21 +48,54 @@ class DB {
     return this.db.prepare('SELECT * FROM content_items WHERE item_id = ?').get(itemId);
   }
 
-  getContentItems({ status, sourceType, limit = 50, offset = 0 } = {}) {
-    let sql = 'SELECT * FROM content_items WHERE 1=1';
+  getContentItems({ status, sourceType, sourceId, isRead, limit = 50, offset = 0 } = {}) {
+    let sql = `
+      SELECT ci.*, ds.source_name
+      FROM content_items ci
+      LEFT JOIN data_sources ds ON ci.source_id = ds.id
+      WHERE 1=1
+    `;
     const params = {};
     if (status) {
-      sql += ' AND status = @status';
+      sql += ' AND ci.status = @status';
       params.status = status;
     }
     if (sourceType) {
-      sql += ' AND source_type = @sourceType';
+      sql += ' AND ci.source_type = @sourceType';
       params.sourceType = sourceType;
     }
-    sql += ' ORDER BY published_date DESC LIMIT @limit OFFSET @offset';
+    if (sourceId) {
+      sql += ' AND ci.source_id = @sourceId';
+      params.sourceId = sourceId;
+    }
+    if (isRead !== undefined) {
+      sql += ' AND ci.is_read = @isRead';
+      params.isRead = isRead ? 1 : 0;
+    }
+    sql += ' ORDER BY ci.published_date DESC LIMIT @limit OFFSET @offset';
     params.limit = limit;
     params.offset = offset;
     return this.db.prepare(sql).all(params);
+  }
+
+  markContentRead(id, isRead) {
+    return this.db.prepare(
+      'UPDATE content_items SET is_read = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+    ).run(isRead ? 1 : 0, id);
+  }
+
+  getUnreadCounts() {
+    const all = this.db.prepare(
+      "SELECT COUNT(*) as count FROM content_items WHERE is_read = 0 AND status = 'processed'"
+    ).get();
+    const bySourceRows = this.db.prepare(
+      "SELECT source_id, COUNT(*) as count FROM content_items WHERE is_read = 0 AND status = 'processed' GROUP BY source_id"
+    ).all();
+    const bySource = {};
+    for (const row of bySourceRows) {
+      bySource[row.source_id] = row.count;
+    }
+    return { all: all.count, bySource };
   }
 
   itemExists(itemId) {

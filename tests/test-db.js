@@ -81,6 +81,39 @@ describe('DB', () => {
     assert.equal(db.getContentItems({ limit: 2 }).length, 2);
   });
 
+  it('markContentRead() 應更新 is_read 欄位', () => {
+    // vid-001 was inserted above; get its numeric id
+    const item = db.getContentItemByItemId('vid-001');
+    assert.equal(item.is_read, 0, 'default is_read should be 0');
+    db.markContentRead(item.id, true);
+    const updated = db.getContentItemByItemId('vid-001');
+    assert.equal(updated.is_read, 1);
+    // Mark back as unread
+    db.markContentRead(item.id, false);
+    const reverted = db.getContentItemByItemId('vid-001');
+    assert.equal(reverted.is_read, 0);
+  });
+
+  it('getContentItems() 可依 is_read 篩選', () => {
+    // Mark vid-001 as read again for this test
+    const item = db.getContentItemByItemId('vid-001');
+    db.markContentRead(item.id, true);
+    const unread = db.getContentItems({ isRead: false });
+    const read = db.getContentItems({ isRead: true });
+    assert.ok(unread.every(i => i.is_read === 0), 'all unread items should have is_read=0');
+    assert.ok(read.every(i => i.is_read === 1), 'all read items should have is_read=1');
+    // Cleanup
+    db.markContentRead(item.id, false);
+  });
+
+  it('getUnreadCounts() 應回傳正確未讀數', () => {
+    // Mark vid-001 as processed and then get unread counts
+    db.updateContentSummary('vid-001', '摘要內容');
+    const counts = db.getUnreadCounts();
+    assert.ok(typeof counts.all === 'number', 'all should be a number');
+    assert.ok(typeof counts.bySource === 'object', 'bySource should be an object');
+  });
+
   // --- failed_items ---
 
   it('insertFailedItem() 應成功插入一筆失敗記錄', () => {

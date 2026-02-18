@@ -28,3 +28,14 @@ export const dataSources = {
 export const engine = {
   getStatus: () => _request('GET', '/api/engine/status'),
 };
+
+export const content = {
+  list: ({ sourceId, limit = 20, offset = 0 } = {}) => {
+    const params = new URLSearchParams({ limit, offset });
+    if (sourceId) params.set('sourceId', sourceId);
+    return _request('GET', `/api/content?${params}`);
+  },
+  get: (id) => _request('GET', `/api/content/${id}`),
+  markRead: (id, isRead) => _request('PATCH', `/api/content/${id}/read`, { is_read: isRead ? 1 : 0 }),
+  unreadCounts: () => _request('GET', '/api/content/unread-counts'),
+};

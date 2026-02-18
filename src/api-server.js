@@ -113,6 +113,10 @@ class ApiServer extends EventEmitter {
         if (!params) continue;
 
         try {
+          // Merge query string params into path params
+          url.searchParams.forEach((value, key) => {
+            if (!(key in params)) params[key] = value;
+          });
           const body = await this._readBody(req);
           const result = await route.handler(params, body);
           const status = result.status || 200;

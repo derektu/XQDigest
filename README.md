@@ -33,7 +33,15 @@
 - 資料源設定從 `settings.json` 移入 SQLite，透過 UI 管理，無需手動編輯設定檔
 - Electron 整合：single-instance lock、二次啟動自動開啟瀏覽器
 
-### Phase 3 — 擷取內容的檢視介面（尚未完成）
+### Phase 3 — 擷取內容的檢視介面（已完成）
+
+> 詳見 [doc/Phase3_ContentFeed_設計文件.md](doc/Phase3_ContentFeed_設計文件.md)
+
+- 三欄閱讀介面：左欄資料源導航（含未讀計數）、中欄卡片列表（可拖拽調整寬度）、右欄 Markdown 摘要渲染
+- 無限滾動：捲動至底部自動載入更多，Intersection Observer 實現
+- 未讀追蹤：點擊卡片自動標記已讀，支援「標記為未讀」還原；未讀計數即時同步
+- 主題系統：深色 / 淺色模式 + 三段字體大小，CSS 變數 + localStorage 持久化
+- 內容篩選：點擊左欄資料源僅顯示該資料源的內容
 
 ### Phase 4 — LLM以及其他參數設定介面（尚未完成）
 
@@ -243,4 +251,5 @@ renderer/
 - `doc/Phase0_模組設計文件.md` — Phase 0 模組架構、介面、資料流程
 - `doc/Phase1_Electron整合設計文件.md` — Phase 1 AppEngine 與 Electron 整合設計
 - `doc/Phase2_DataSources_UI設計文件.md` — Phase 2 HTTP Server、REST API、React UI 設計
+- `doc/Phase3_ContentFeed_設計文件.md` — Phase 3 Feed 閱讀介面、Content API、主題系統設計
 - `CLAUDE.md` — AI 開發規範與架構導覽

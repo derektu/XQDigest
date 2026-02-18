@@ -11,11 +11,16 @@ const headerStyle = {
 
 const btnAdd = {
   padding: '7px 18px', borderRadius: 4, border: 'none',
-  background: '#0d6efd', color: '#fff', cursor: 'pointer', fontSize: 14,
+  background: 'var(--color-accent)', color: '#fff', cursor: 'pointer',
+  fontSize: 'var(--font-size-base)', fontWeight: 500,
+  transition: 'background 0.15s',
 };
 
 const inputSearch = {
-  padding: '5px 10px', borderRadius: 4, border: '1px solid #ccc',
+  padding: '5px 10px', borderRadius: 4,
+  border: '1px solid var(--color-border)',
+  background: 'var(--color-bg-surface)',
+  color: 'var(--color-text-primary)',
   fontSize: 13, width: 200,
 };
 
@@ -25,7 +30,7 @@ export default function DataSourcesPage() {
   const [editTarget, setEditTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState(null);   // null = default (creation order)
+  const [sortBy, setSortBy] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
 
   const handleAdd = () => {
@@ -58,13 +63,11 @@ export default function DataSourcesPage() {
 
   const handleSort = (column) => {
     if (sortBy !== column) {
-      // New column: start with asc
       setSortBy(column);
       setSortDir('asc');
     } else if (sortDir === 'asc') {
       setSortDir('desc');
     } else {
-      // desc → back to original order
       setSortBy(null);
       setSortDir('asc');
     }
@@ -73,7 +76,6 @@ export default function DataSourcesPage() {
   const filteredList = useMemo(() => {
     let result = [...list];
 
-    // Filter by search
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       result = result.filter(ds =>
@@ -81,7 +83,6 @@ export default function DataSourcesPage() {
       );
     }
 
-    // Sort
     if (sortBy) {
       result.sort((a, b) => {
         let cmp = 0;
@@ -103,22 +104,20 @@ export default function DataSourcesPage() {
   const disabledCount = list.length - enabledCount;
 
   if (loading) {
-    return <div style={{ padding: 24, color: '#888' }}>載入中...</div>;
+    return <div style={{ padding: 24, color: 'var(--color-text-muted)' }}>載入中...</div>;
   }
 
   return (
     <div style={{ padding: 24, maxWidth: 960, margin: '0 auto' }}>
       <div style={headerStyle}>
-        <h2 style={{ margin: 0 }}>資料源管理</h2>
+        <h2 style={{ margin: 0, color: 'var(--color-text-primary)' }}>資料源管理</h2>
         <button style={btnAdd} onClick={handleAdd}>+ 新增來源</button>
       </div>
 
-      {/* Stats row */}
-      <div style={{ fontSize: 13, color: '#666', marginBottom: 12, padding: '0 4px' }}>
+      <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12, padding: '0 4px' }}>
         共 {list.length} 個來源　啟用 {enabledCount}　停用 {disabledCount}
       </div>
 
-      {/* Search toolbar */}
       <div style={{ marginBottom: 12, padding: '0 4px' }}>
         <input
           style={inputSearch}
@@ -128,7 +127,7 @@ export default function DataSourcesPage() {
         />
       </div>
 
-      {error && <div style={{ color: '#dc3545', marginBottom: 12 }}>Error: {error}</div>}
+      {error && <div style={{ color: 'var(--color-danger)', marginBottom: 12 }}>Error: {error}</div>}
 
       <DataSourceList
         list={filteredList}

@@ -4,6 +4,7 @@ const ConfigManager = require('./config');
 const Logger = require('./logger');
 const { LoggerConfig } = require('./logger');
 const DB = require('./database/db');
+const DataSourceManager = require('./datasource-manager');
 const Storage = require('./storage');
 const DownloadQueue = require('./queue');
 const { QueueConfig } = require('./queue');
@@ -12,11 +13,14 @@ const RSSFetcher = require('./fetchers/rss');
 const LLMService = require('./llm');
 const { LLMServiceConfig } = require('./llm');
 const Scheduler = require('./scheduler');
+const ApiServer = require('./api-server');
 
 const STATES = {
   STOPPED: 'stopped',
   STARTING: 'starting',
   RUNNING: 'running',
+  PAUSING: 'pausing',
+  PAUSED: 'paused',
   STOPPING: 'stopping',
 };
 
@@ -28,10 +32,12 @@ class AppEngine extends EventEmitter {
     this._configManager = null;
     this._logger = null;
     this._db = null;
+    this._dataSourceManager = null;
     this._storage = null;
     this._queue = null;
     this._scheduler = null;
     this._llmService = null;
+    this._apiServer = null;
   }
 
   getState() {
@@ -39,11 +45,30 @@ class AppEngine extends EventEmitter {
   }
 
   getStatus() {
+    const dsCount = this._dataSourceManager
+      ? this._dataSourceManager.getEnabled().length
+      : (this._configManager ? this._configManager.getEnabledDataSources().length : 0);
     return {
       state: this._state,
-      dataSources: this._configManager ? this._configManager.getEnabledDataSources().length : 0,
+      dataSources: dsCount,
       llmConfigured: !!this._llmService,
     };
+  }
+
+  getDataSourceManager() {
+    return this._dataSourceManager;
+  }
+
+  getScheduler() {
+    return this._scheduler;
+  }
+
+  getApiPort() {
+    return this._apiServer ? this._apiServer.getPort() : null;
+  }
+
+  getDB() {
+    return this._db;
   }
 
   async start() {
@@ -66,7 +91,6 @@ class AppEngine extends EventEmitter {
       }));
       this._logger = Logger.getLogger('AppEngine');
       this._logger.info('XQDigest starting...');
-      this._logger.info(`Config loaded: ${this._configManager.getEnabledDataSources().length} data source(s), concurrent limit: ${config.download.concurrentLimit}`);
 
       // 3. Init database
       const dataPath = this._configManager.getDataPath();
@@ -75,10 +99,16 @@ class AppEngine extends EventEmitter {
       this._db.open();
       this._logger.info('Database initialized');
 
-      // 4. Init storage
+      // 4. Init DataSourceManager
+      this._dataSourceManager = new DataSourceManager(this._db);
+
+      const enabledCount = this._dataSourceManager.getEnabled().length;
+      this._logger.info(`DataSourceManager ready: ${enabledCount} enabled source(s)`);
+
+      // 5. Init storage
       this._storage = new Storage(this._db, dataPath);
 
-      // 5. Init download queue
+      // 6. Init download queue
       const downloadConfig = this._configManager.getDownloadConfig();
       this._queue = new DownloadQueue(new QueueConfig({
         concurrentLimit: downloadConfig.concurrentLimit,
@@ -96,11 +126,11 @@ class AppEngine extends EventEmitter {
         this._logger.debug(`Queue: completed "${task.name}" (pending: ${status.pending}, active: ${status.active}, completed: ${status.completed})`);
       });
 
-      // 6. Init fetchers
+      // 7. Init fetchers
       const youtubeFetcher = new YouTubeFetcher();
       const rssFetcher = new RSSFetcher();
 
-      // 7. Init LLM service
+      // 8. Init LLM service
       const llmConfig = this._configManager.getLLMConfig();
       this._llmService = null;
       if (llmConfig && llmConfig.apiKey) {
@@ -110,9 +140,10 @@ class AppEngine extends EventEmitter {
         this._logger.warn('No LLM API key configured, summaries will be skipped');
       }
 
-      // 8. Init scheduler
+      // 9. Init scheduler (uses DataSourceManager for sources, ConfigManager for LLM)
       this._scheduler = new Scheduler({
         configManager: this._configManager,
+        dataSourceManager: this._dataSourceManager,
         queue: this._queue,
         youtubeFetcher,
         rssFetcher,
@@ -121,11 +152,21 @@ class AppEngine extends EventEmitter {
         db: this._db,
       });
 
-      // 9. Setup config hot-reload
+      // 10. Setup config hot-reload (for LLM, download, app settings)
       this._setupConfigListeners();
 
-      // 10. Start scheduler
+      // 11. Start scheduler
       this._scheduler.start();
+
+      // 12. Start API server (if apiPort is configured)
+      const apiPort = config.app.apiPort !== undefined ? config.app.apiPort : 3579;
+      if (apiPort !== null) {
+        this._apiServer = new ApiServer(this);
+        const actualPort = await this._apiServer.start(apiPort);
+        this._logger.info(`API server listening on http://127.0.0.1:${actualPort}`);
+        this.emit('serverReady', actualPort);
+      }
+
       this._logger.info('XQDigest is running.');
 
       this._setState(STATES.RUNNING);
@@ -140,20 +181,39 @@ class AppEngine extends EventEmitter {
   async _safeCleanup() {
     try { if (this._scheduler) this._scheduler.stop(); } catch (_) {}
     try { if (this._queue) { this._queue.stop(); await this._queue.drain(); } } catch (_) {}
+    try { if (this._apiServer) await this._apiServer.stop(); } catch (_) {}
     try { if (this._configManager) { this._configManager.stopWatching(); this._configManager.removeAllListeners(); } } catch (_) {}
     try { if (this._db) this._db.close(); } catch (_) {}
     try { Logger.close(); } catch (_) {}
     this._configManager = null;
     this._logger = null;
     this._db = null;
+    this._dataSourceManager = null;
     this._storage = null;
     this._queue = null;
     this._scheduler = null;
     this._llmService = null;
+    this._apiServer = null;
+  }
+
+  pause() {
+    if (this._state !== STATES.RUNNING) {
+      throw new Error(`Cannot pause: engine is ${this._state}`);
+    }
+    this._scheduler.stop();
+    this._setState(STATES.PAUSED);
+  }
+
+  resume() {
+    if (this._state !== STATES.PAUSED) {
+      throw new Error(`Cannot resume: engine is ${this._state}`);
+    }
+    this._scheduler.start();
+    this._setState(STATES.RUNNING);
   }
 
   async stop() {
-    if (this._state !== STATES.RUNNING) {
+    if (this._state !== STATES.RUNNING && this._state !== STATES.PAUSED) {
       throw new Error(`Cannot stop: engine is ${this._state}`);
     }
 
@@ -170,6 +230,9 @@ class AppEngine extends EventEmitter {
         this._queue.stop();
         await this._queue.drain();
       }
+      if (this._apiServer) {
+        await this._apiServer.stop();
+      }
       if (this._configManager) {
         this._configManager.stopWatching();
         this._configManager.removeAllListeners();
@@ -185,10 +248,12 @@ class AppEngine extends EventEmitter {
       this._configManager = null;
       this._logger = null;
       this._db = null;
+      this._dataSourceManager = null;
       this._storage = null;
       this._queue = null;
       this._scheduler = null;
       this._llmService = null;
+      this._apiServer = null;
 
       this._setState(STATES.STOPPED);
     } catch (err) {
@@ -196,12 +261,6 @@ class AppEngine extends EventEmitter {
       this.emit('error', err);
       throw err;
     }
-  }
-
-  async restart() {
-    await this.stop();
-    await this.start();
-    this.emit('configReloaded');
   }
 
   _setState(newState) {
@@ -233,8 +292,7 @@ class AppEngine extends EventEmitter {
         }
       }
 
-      // Restart scheduler with new source config
-      this._scheduler.restart();
+      // Note: dataSources are now in DB, not config. No scheduler restart needed for config changes.
       this._logger.info('Config reloaded successfully');
       this.emit('configReloaded');
     });

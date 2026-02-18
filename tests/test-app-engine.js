@@ -11,7 +11,7 @@ const DATA_DIR = path.join(TMP_DIR, 'data');
 function makeConfig(overrides = {}) {
   return {
     version: '1.0',
-    app: { logLevel: 'error', dataPath: DATA_DIR },
+    app: { logLevel: 'error', dataPath: DATA_DIR, apiPort: null },
     download: { concurrentLimit: 2, retryAttempts: 1, retryDelay: 100, timeoutMs: 5000 },
     dataSources: [],
     llm: { provider: 'openai', apiKey: '', model: 'gpt-4' },
@@ -62,21 +62,6 @@ describe('AppEngine', () => {
     await engine.stop();
     assert.equal(engine.getState(), 'stopped');
     assert.deepEqual(states, ['stopping', 'stopped']);
-  });
-
-  it('restart() 應依序 stop → start', async () => {
-    writeConfig();
-    const engine = new AppEngine({ configPath: CONFIG_PATH });
-    await engine.start();
-
-    const states = [];
-    engine.on('stateChange', (state) => states.push(state));
-
-    await engine.restart();
-    assert.equal(engine.getState(), 'running');
-    assert.deepEqual(states, ['stopping', 'stopped', 'starting', 'running']);
-
-    await engine.stop();
   });
 
   it('重複 start() 應拋錯', async () => {
@@ -160,6 +145,70 @@ describe('AppEngine', () => {
       { from: 'starting', to: 'running' },
     ]);
 
+    await engine.stop();
+  });
+
+  it('pause() 應停止排程並轉為 paused', async () => {
+    writeConfig();
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    await engine.start();
+
+    const states = [];
+    engine.on('stateChange', (state) => states.push(state));
+
+    engine.pause();
+    assert.equal(engine.getState(), 'paused');
+    assert.deepEqual(states, ['paused']);
+
+    await engine.stop();
+  });
+
+  it('resume() 應重啟排程並轉為 running', async () => {
+    writeConfig();
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    await engine.start();
+    engine.pause();
+
+    const states = [];
+    engine.on('stateChange', (state) => states.push(state));
+
+    engine.resume();
+    assert.equal(engine.getState(), 'running');
+    assert.deepEqual(states, ['running']);
+
+    await engine.stop();
+  });
+
+  it('stop() 應能從 paused 狀態執行', async () => {
+    writeConfig();
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    await engine.start();
+    engine.pause();
+
+    const states = [];
+    engine.on('stateChange', (state) => states.push(state));
+
+    await engine.stop();
+    assert.equal(engine.getState(), 'stopped');
+    assert.deepEqual(states, ['stopping', 'stopped']);
+  });
+
+  it('pause() 在非 running 狀態應拋錯', async () => {
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    assert.throws(
+      () => engine.pause(),
+      { message: /Cannot pause: engine is stopped/ },
+    );
+  });
+
+  it('resume() 在非 paused 狀態應拋錯', async () => {
+    writeConfig();
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    await engine.start();
+    assert.throws(
+      () => engine.resume(),
+      { message: /Cannot resume: engine is running/ },
+    );
     await engine.stop();
   });
 });

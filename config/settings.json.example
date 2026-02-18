@@ -3,7 +3,8 @@
 
   "app": {
     "logLevel": "info",
-    "dataPath": "./data"
+    "dataPath": "./data",
+    "apiPort": 3579
   },
 
   "download": {
@@ -12,31 +13,6 @@
     "retryDelay": 1000,
     "timeoutMs": 30000
   },
-
-  "dataSources": [
-    {
-      "id": "yt-example",
-      "type": "youtube",
-      "name": "Example YouTube Channel",
-      "url": "https://www.youtube.com/@ChannelName",
-      "checkInterval": 3600,
-      "enabled": true,
-      "maxItems": 5,
-      "lookbackDays": 7,
-      "prompt": ""
-    },
-    {
-      "id": "rss-example",
-      "type": "rss",
-      "name": "Example RSS Feed",
-      "url": "https://example.com/feed/",
-      "checkInterval": 3600,
-      "enabled": false,
-      "maxItems": 10,
-      "lookbackDays": 14,
-      "prompt": ""
-    }
-  ],
 
   "llm": {
     "provider": "openai",

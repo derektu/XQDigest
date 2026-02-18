@@ -6,7 +6,7 @@ XQDigest 是財經資訊自動摘要工具。自動監控 YouTube 頻道與 RSS 
 
 - **Phase 0 (POC)**: 純 CLI 驗證核心流程 — 已完成
 - **Phase 1**: Electron 框架整合（AppEngine + tray）— 已完成
-- **Phase 2**: UI 功能逐步建置 — 下一階段
+- **Phase 2**: DataSources UI + 內嵌 HTTP Server — 已完成
 
 純 Node.js (CommonJS) 專案，Electron 作為桌面外殼。
 
@@ -18,7 +18,10 @@ XQDigest 是財經資訊自動摘要工具。自動監控 YouTube 頻道與 RSS 
 |------|------|
 | `doc/Phase0_模組設計文件.md` | 核心模組架構、介面、資料流程（完整參考） |
 | `doc/Phase1_Electron整合設計文件.md` | AppEngine 狀態機、Electron 整合、跨平台處理 |
+| `doc/Phase2_DataSources_UI設計文件.md` | Phase 2 架構：HTTP Server、REST API、React UI |
 | `src/app-engine.js` | 應用核心引擎，封裝所有模組初始化與生命週期 |
+| `src/api-server.js` | 內嵌 HTTP server（serve API + 靜態檔） |
+| `src/api-routes.js` | REST API route handlers |
 | `src/index.js` | CLI 模式入口（透過 AppEngine） |
 | `electron/main.js` | Electron 入口（AppEngine + TrayManager） |
 | `electron/tray.js` | 系統匣管理（macOS/Windows 跨平台 icon） |
@@ -29,8 +32,11 @@ XQDigest 是財經資訊自動摘要工具。自動監控 YouTube 頻道與 RSS 
 ```
 src/                  — 核心模組（純 Node.js，無 Electron 依賴）
   ├── app-engine.js   — 應用引擎（狀態機 + 模組協調）
+  ├── api-server.js   — 內嵌 HTTP server（API + 靜態檔）
+  ├── api-routes.js   — REST API route handlers
   ├── index.js        — CLI 入口
   ├── config.js       — 設定管理
+  ├── datasource-manager.js — 資料源 CRUD（SQLite 封裝）
   ├── logger.js       — Logger (singleton)
   ├── queue.js        — 下載佇列（並發控制 + 重試）
   ├── scheduler.js    — 排程與處理 pipeline
@@ -42,6 +48,8 @@ electron/             — Electron 桌面外殼
   ├── main.js         — Electron main process
   ├── tray.js         — 系統匣管理
   └── icons/          — 平台圖示
+renderer/             — React UI（Vite + React）
+  └── src/            — React 元件與 API 呼叫層
 tests/                — 測試程式
 config/               — 設定檔
 doc/                  — 設計文件

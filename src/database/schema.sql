@@ -17,14 +17,18 @@ CREATE TABLE IF NOT EXISTS content_items (
 );
 
 CREATE TABLE IF NOT EXISTS data_sources (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id TEXT PRIMARY KEY,
   source_type TEXT NOT NULL,
   source_name TEXT NOT NULL,
   source_url TEXT NOT NULL,
   check_interval INTEGER DEFAULT 3600,
+  max_items INTEGER DEFAULT 10,
+  lookback_days INTEGER DEFAULT 7,
+  prompt TEXT DEFAULT '',
+  is_active INTEGER DEFAULT 1,
   last_check DATETIME,
-  is_active BOOLEAN DEFAULT 1,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS llm_configs (

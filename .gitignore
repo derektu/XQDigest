@@ -6,9 +6,16 @@ logs/
 
 # User-specific config (contains API keys)
 config/settings.json
+config/settings.json.backup
 
 # Claude Code local state
 .claude/
 
+# Vite build output
+dist-renderer/
+
 # Personal scratch pad
 doc/Tasks.md
+
+# Temp test directories
+tests/_tmp_*/

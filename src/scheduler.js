@@ -2,8 +2,9 @@ const Logger = require('./logger');
 const { PermanentError } = require('./fetchers/youtube');
 
 class Scheduler {
-  constructor({ configManager, queue, youtubeFetcher, rssFetcher, llmService, storage, db, logger }) {
+  constructor({ configManager, dataSourceManager, queue, youtubeFetcher, rssFetcher, llmService, storage, db, logger }) {
     this.configManager = configManager;
+    this.dataSourceManager = dataSourceManager || null;
     this.queue = queue;
     this.youtubeFetcher = youtubeFetcher;
     this.rssFetcher = rssFetcher;
@@ -29,7 +30,6 @@ class Scheduler {
 
     this.queue.on('taskFailed', (task, error) => {
       if (error instanceof PermanentError) {
-        // Permanent failure: record in DB, remove from pending (DB takes over dedup)
         this._pendingItems.delete(task.id);
         if (task.meta) {
           const { source, item } = task.meta;
@@ -44,11 +44,30 @@ class Scheduler {
         }
         this.logger.error(`Permanent failure: "${task.name}" — ${error.message}`);
       } else {
-        // Transient failure: remove from _pendingItems so next schedule cycle can retry
         this._pendingItems.delete(task.id);
         this.logger.error(`Failed: "${task.name}" — ${error.message}`);
       }
     });
+  }
+
+  /**
+   * Get enabled data sources — prefer DataSourceManager (DB), fall back to ConfigManager (JSON).
+   */
+  _getEnabledSources() {
+    if (this.dataSourceManager) {
+      return this.dataSourceManager.getEnabled();
+    }
+    return this.configManager.getEnabledDataSources();
+  }
+
+  /**
+   * Get source prompt by ID — prefer DataSourceManager, fall back to ConfigManager.
+   */
+  _getSourcePrompt(sourceId) {
+    if (this.dataSourceManager) {
+      return this.dataSourceManager.getSourcePrompt(sourceId);
+    }
+    return this.configManager.getSourcePrompt(sourceId);
   }
 
   start() {
@@ -77,7 +96,7 @@ class Scheduler {
    */
   async checkNow() {
     this.logger.info('Manual check triggered for all sources');
-    const sources = this.configManager.getEnabledDataSources();
+    const sources = this._getEnabledSources();
     for (const source of sources) {
       await this._checkSource(source);
     }
@@ -87,7 +106,7 @@ class Scheduler {
    * Manually trigger a check for a specific source.
    */
   async checkSource(sourceId) {
-    const sources = this.configManager.getEnabledDataSources();
+    const sources = this._getEnabledSources();
     const source = sources.find(s => s.id === sourceId);
     if (!source) {
       this.logger.warn(`Source not found: ${sourceId}`);
@@ -96,34 +115,65 @@ class Scheduler {
     await this._checkSource(source);
   }
 
+  /**
+   * Add a scheduled job for a single source (without restarting all jobs).
+   */
+  addSource(sourceId) {
+    if (!this.running) return;
+    if (!this.dataSourceManager) return;
+
+    const source = this.dataSourceManager.getById(sourceId);
+    if (!source || !source.enabled) return;
+
+    // Don't add duplicate
+    if (this.cronJobs.some(j => j.sourceId === sourceId)) return;
+
+    this._addJobForSource(source);
+    this.logger.info(`Added schedule for source: ${source.name} (${sourceId})`);
+  }
+
+  /**
+   * Remove the scheduled job for a single source.
+   */
+  removeSource(sourceId) {
+    const idx = this.cronJobs.findIndex(j => j.sourceId === sourceId);
+    if (idx !== -1) {
+      this.cronJobs[idx].stop();
+      this.cronJobs.splice(idx, 1);
+      this.logger.info(`Removed schedule for source: ${sourceId}`);
+    }
+  }
+
   _setupJobs() {
-    const sources = this.configManager.getEnabledDataSources();
+    const sources = this._getEnabledSources();
     this.logger.info(`Setting up jobs for ${sources.length} enabled source(s)`);
 
     for (const source of sources) {
-      const intervalSec = source.checkInterval || 3600;
-      const intervalMs = intervalSec * 1000;
-
-      // Run initial check after a short delay
-      const initialDelay = setTimeout(() => {
-        if (this.running) this._checkSource(source);
-      }, 5000);
-
-      // Then run periodically
-      const interval = setInterval(() => {
-        if (this.running) this._checkSource(source);
-      }, intervalMs);
-
-      // Store for cleanup
-      this.cronJobs.push({
-        stop: () => {
-          clearTimeout(initialDelay);
-          clearInterval(interval);
-        },
-      });
-
-      this.logger.info(`Scheduled: ${source.name} (${source.type}) every ${intervalSec}s`);
+      this._addJobForSource(source);
     }
+  }
+
+  _addJobForSource(source) {
+    const intervalSec = source.checkInterval || 3600;
+    const intervalMs = intervalSec * 1000;
+
+    const initialDelay = setTimeout(() => {
+      if (this.running) this._checkSource(source);
+    }, 5000);
+
+    const interval = setInterval(() => {
+      if (this.running) this._checkSource(source);
+    }, intervalMs);
+
+    this.cronJobs.push({
+      sourceId: source.id,
+      stop: () => {
+        clearTimeout(initialDelay);
+        clearInterval(interval);
+      },
+    });
+
+    this.logger.info(`Scheduled: ${source.name} (${source.type}) every ${intervalSec}s`);
   }
 
   async _checkSource(source) {
@@ -154,8 +204,7 @@ class Scheduler {
         items = items.slice(0, source.maxItems);
       }
 
-      // 3. Filter out already-seen items (DB) and items still being processed (queue)
-      //    Add to _pendingItems immediately during filter to prevent concurrent _checkSource() from double-enqueuing
+      // 3. Filter out already-seen items
       const newItems = items.filter(item => {
         if (this.db.itemExists(item.itemId) || this.db.isItemFailed(item.itemId) || this._pendingItems.has(item.itemId)) {
           return false;
@@ -170,7 +219,6 @@ class Scheduler {
 
       this.logger.info(`[${source.name}] Fetched ${totalFetched}, ${afterLookback} within lookback, ${newItems.length} new, processing ${newItems.length}`);
 
-      // Add each new item to the download queue
       for (const item of newItems) {
         this.queue.addTask({
           id: item.itemId,
@@ -178,6 +226,11 @@ class Scheduler {
           meta: { source, item },
           execute: () => this._processItem(source, item),
         });
+      }
+
+      // Update last check time
+      if (this.dataSourceManager) {
+        this.dataSourceManager.updateLastCheck(source.id);
       }
     } catch (err) {
       this.logger.error(`Error checking source ${source.name}: ${err.message}`);
@@ -218,25 +271,22 @@ class Scheduler {
     this.logger.info(`${tag} Processing: "${item.title}" (${item.itemId})`);
 
     try {
-      // Step 1: Fetch full content if needed
       if (source.type === 'youtube' && !item.content) {
         this.logger.info(`${tag} Downloading transcript: "${item.title}"`);
         item.content = await this.youtubeFetcher.fetchTranscript(item.itemId);
         this.logger.info(`${tag} Transcript downloaded: "${item.title}"`);
       }
 
-      // Step 2: Generate LLM summary (before save — failure prevents DB insert)
       let summaryText = null;
       const llmConfig = this.configManager.getLLMConfig();
       if (llmConfig && llmConfig.apiKey) {
-        const sourcePrompt = this.configManager.getSourcePrompt(source.id);
+        const sourcePrompt = this._getSourcePrompt(source.id);
         summaryText = await this.llmService.summarize(item.content, item.title, sourcePrompt);
         this.logger.info(`${tag} Summary generated: "${item.title}"`);
       } else {
         this.logger.warn(`${tag} No LLM API key configured, skipping summary`);
       }
 
-      // Step 3: Save to disk + DB (only reached if all above succeeded)
       await this.storage.saveContent(item);
       if (summaryText) {
         await this.storage.updateSummary(item, summaryText);
@@ -246,7 +296,7 @@ class Scheduler {
       return item;
     } catch (err) {
       this.logger.error(`${tag} Error processing "${item.title}" (${item.itemId}): ${err.message}`);
-      throw err; // re-throw so queue handles retry
+      throw err;
     }
   }
 }

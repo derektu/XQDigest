@@ -1,4 +1,4 @@
-const { app } = require('electron');
+const { app, shell } = require('electron');
 const AppEngine = require('../src/app-engine');
 const TrayManager = require('./tray');
 
@@ -28,6 +28,10 @@ app.on('ready', async () => {
     trayManager.updateState(state);
   });
 
+  engine.on('serverReady', (port) => {
+    trayManager.setPort(port);
+  });
+
   engine.on('error', (err) => {
     console.error('AppEngine error:', err.message);
   });
@@ -39,13 +43,21 @@ app.on('ready', async () => {
   }
 });
 
+// Open browser when second instance is launched
+app.on('second-instance', () => {
+  const port = engine && engine.getApiPort();
+  if (port) {
+    shell.openExternal(`http://localhost:${port}`);
+  }
+});
+
 // Tray-only: don't quit when all windows are closed
 app.on('window-all-closed', (e) => {
   e.preventDefault();
 });
 
 app.on('before-quit', async (e) => {
-  if (engine && engine.getState() === 'running') {
+  if (engine && ['running', 'paused'].includes(engine.getState())) {
     e.preventDefault();
     try {
       await engine.stop();

@@ -98,6 +98,69 @@ class DB {
     return this.db.prepare(sql).all(params);
   }
 
+  // --- data_sources ---
+
+  getAllDataSources() {
+    return this.db.prepare('SELECT * FROM data_sources ORDER BY created_at ASC').all();
+  }
+
+  getActiveDataSources() {
+    return this.db.prepare('SELECT * FROM data_sources WHERE is_active = 1 ORDER BY created_at ASC').all();
+  }
+
+  getDataSourceById(id) {
+    return this.db.prepare('SELECT * FROM data_sources WHERE id = ?').get(id);
+  }
+
+  insertDataSource(ds) {
+    const stmt = this.db.prepare(`
+      INSERT INTO data_sources (id, source_type, source_name, source_url, check_interval, max_items, lookback_days, prompt, is_active)
+      VALUES (@id, @source_type, @source_name, @source_url, @check_interval, @max_items, @lookback_days, @prompt, @is_active)
+    `);
+    return stmt.run(ds);
+  }
+
+  updateDataSource(id, fields) {
+    const allowed = ['source_type', 'source_name', 'source_url', 'check_interval', 'max_items', 'lookback_days', 'prompt', 'is_active'];
+    const sets = [];
+    const params = { id };
+    for (const [key, value] of Object.entries(fields)) {
+      if (allowed.includes(key)) {
+        sets.push(`${key} = @${key}`);
+        params[key] = value;
+      }
+    }
+    if (sets.length === 0) return;
+    sets.push('updated_at = CURRENT_TIMESTAMP');
+    const sql = `UPDATE data_sources SET ${sets.join(', ')} WHERE id = @id`;
+    return this.db.prepare(sql).run(params);
+  }
+
+  deleteDataSource(id) {
+    return this.db.prepare('DELETE FROM data_sources WHERE id = ?').run(id);
+  }
+
+  setDataSourceActive(id, active) {
+    return this.db.prepare('UPDATE data_sources SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(active ? 1 : 0, id);
+  }
+
+  updateDataSourceLastCheck(id) {
+    return this.db.prepare('UPDATE data_sources SET last_check = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+  }
+
+  getDataSourceStats(id) {
+    const total = this.db.prepare('SELECT COUNT(*) as count FROM content_items WHERE source_id = ?').get(id);
+    const processed = this.db.prepare("SELECT COUNT(*) as count FROM content_items WHERE source_id = ? AND status = 'processed'").get(id);
+    const failed = this.db.prepare('SELECT COUNT(*) as count FROM failed_items WHERE source_id = ?').get(id);
+    const ds = this.getDataSourceById(id);
+    return {
+      totalItems: total.count,
+      processedItems: processed.count,
+      failedItems: failed.count,
+      lastCheck: ds ? ds.last_check : null,
+    };
+  }
+
   // --- stats ---
 
   getStats() {

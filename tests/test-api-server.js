@@ -124,12 +124,16 @@ function createMockEngine() {
     _addContentItem: addContentItem,
   };
 
+  let llmSettingsStore = null;
+
   return {
     getState: () => 'running',
-    getStatus: () => ({ state: 'running', dataSources: sources.size, llmConfigured: false }),
+    getStatus: () => ({ state: 'running', dataSources: sources.size, llmConfigured: !!llmSettingsStore }),
     getDataSourceManager: () => mgr,
     getScheduler: () => scheduler,
     getDB: () => db,
+    getLLMSettings: () => llmSettingsStore,
+    setLLMSettings: (data) => { llmSettingsStore = data; },
     _mgr: mgr,
     _schedulerActions: schedulerActions,
     _db: db,
@@ -261,6 +265,38 @@ describe('ApiServer', () => {
     const res = await makeRequest(port, 'PATCH', `/api/content/${item.id}/read`, { is_read: 1 });
     assert.equal(res.status, 200);
     assert.equal(res.body.ok, true);
+  });
+
+  it('GET /api/settings/llm 尚未設定應回傳 null', async () => {
+    const res = await makeRequest(port, 'GET', '/api/settings/llm');
+    assert.equal(res.status, 200);
+    assert.equal(res.body, null);
+  });
+
+  it('PUT /api/settings/llm 應儲存設定', async () => {
+    const data = { provider: 'openai', apiKey: 'sk-test1234', model: 'gpt-4o-mini', maxTokens: 4096, temperature: 0.7, summarizationPrompt: '' };
+    const res = await makeRequest(port, 'PUT', '/api/settings/llm', data);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+  });
+
+  it('GET /api/settings/llm 儲存後應回傳遮罩版 apiKey', async () => {
+    const res = await makeRequest(port, 'GET', '/api/settings/llm');
+    assert.equal(res.status, 200);
+    assert.ok(res.body !== null, 'should not be null after PUT');
+    assert.equal(res.body.provider, 'openai');
+    assert.ok(res.body.apiKey.startsWith('****'), 'apiKey should be masked');
+    assert.ok(res.body.apiKey.endsWith('1234'), 'last 4 chars should be visible');
+  });
+
+  it('PUT /api/settings/llm 傳送遮罩 apiKey 應保留舊值', async () => {
+    const res = await makeRequest(port, 'PUT', '/api/settings/llm', {
+      provider: 'openai', apiKey: '****1234', model: 'gpt-4o', maxTokens: 2048, temperature: 0.5, summarizationPrompt: '',
+    });
+    assert.equal(res.status, 200);
+    // Verify stored apiKey is still the original
+    const getRes = await makeRequest(port, 'GET', '/api/settings/llm');
+    assert.equal(getRes.body.apiKey, '****1234'); // still masked original key
   });
 });
 

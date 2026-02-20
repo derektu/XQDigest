@@ -71,6 +71,26 @@ class AppEngine extends EventEmitter {
     return this._db;
   }
 
+  getLLMSettings() {
+    if (!this._db) return null;
+    return this._db.getAppSetting('llm');
+  }
+
+  setLLMSettings(data) {
+    if (!this._db) throw new Error('Engine not running');
+    this._db.setAppSetting('llm', data);
+    // Re-initialize LLM service
+    if (data && data.apiKey) {
+      this._llmService = new LLMService(new LLMServiceConfig(data));
+      if (this._scheduler) this._scheduler.updateLLMService(this._llmService);
+      if (this._logger) this._logger.info(`LLM re-configured: ${data.provider} / ${data.model}`);
+    } else {
+      this._llmService = null;
+      if (this._scheduler) this._scheduler.updateLLMService(null);
+      if (this._logger) this._logger.info('LLM configuration removed');
+    }
+  }
+
   async start() {
     if (this._state !== STATES.STOPPED) {
       throw new Error(`Cannot start: engine is ${this._state}`);
@@ -130,12 +150,12 @@ class AppEngine extends EventEmitter {
       const youtubeFetcher = new YouTubeFetcher();
       const rssFetcher = new RSSFetcher();
 
-      // 8. Init LLM service
-      const llmConfig = this._configManager.getLLMConfig();
+      // 8. Init LLM service (settings from DB)
       this._llmService = null;
-      if (llmConfig && llmConfig.apiKey) {
-        this._llmService = new LLMService(new LLMServiceConfig(llmConfig));
-        this._logger.info(`LLM configured: ${llmConfig.provider} / ${llmConfig.model}`);
+      const llmSettings = this._db.getAppSetting('llm');
+      if (llmSettings && llmSettings.apiKey) {
+        this._llmService = new LLMService(new LLMServiceConfig(llmSettings));
+        this._logger.info(`LLM configured: ${llmSettings.provider} / ${llmSettings.model}`);
       } else {
         this._logger.warn('No LLM API key configured, summaries will be skipped');
       }
@@ -283,16 +303,8 @@ class AppEngine extends EventEmitter {
       // Update queue concurrent limit
       this._queue.updateConcurrentLimit(newConfig.download.concurrentLimit);
 
-      // Update LLM service
-      if (newConfig.llm && newConfig.llm.apiKey) {
-        if (this._llmService) {
-          this._llmService.updateConfig(newConfig.llm);
-        } else {
-          this._llmService = new LLMService(new LLMServiceConfig(newConfig.llm));
-        }
-      }
-
-      // Note: dataSources are now in DB, not config. No scheduler restart needed for config changes.
+      // Note: LLM settings are now in DB (managed via Settings UI).
+      // dataSources are also in DB, not config. No scheduler restart needed for config changes.
       this._logger.info('Config reloaded successfully');
       this.emit('configReloaded');
     });

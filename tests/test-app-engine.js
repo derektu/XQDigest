@@ -10,11 +10,8 @@ const DATA_DIR = path.join(TMP_DIR, 'data');
 
 function makeConfig(overrides = {}) {
   return {
-    version: '1.0',
     app: { logLevel: 'error', dataPath: DATA_DIR, apiPort: null },
     download: { concurrentLimit: 2, retryAttempts: 1, retryDelay: 100, timeoutMs: 5000 },
-    dataSources: [],
-    llm: { provider: 'openai', apiKey: '', model: 'gpt-4' },
     ...overrides,
   };
 }

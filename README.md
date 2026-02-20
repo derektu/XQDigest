@@ -43,7 +43,14 @@
 - 主題系統：深色 / 淺色模式 + 三段字體大小，CSS 變數 + localStorage 持久化
 - 內容篩選：點擊左欄資料源僅顯示該資料源的內容
 
-### Phase 4 — LLM以及其他參數設定介面（尚未完成）
+### Phase 4 — LLM以及其他參數設定介面（已完成）
+
+> 詳見 [doc/Phase4_Settings_設計文件.md](doc/Phase4_Settings_設計文件.md)
+
+- LLM 設定從 `settings.json` 遷移至 DB（`app_settings` table）
+- Settings UI：Provider 選擇、API Key 驗證、模型選單、參數配置
+- 未設定 LLM 時顯示橘色警示 banner，導向 Settings 頁面
+- 支援 OpenAI、Gemini、OpenAI-compatible 三種 provider
 
 ### Phase 5 — Installer以及auto-update機制（尚未完成）
 
@@ -100,96 +107,186 @@ npm install
 
 ## 設定
 
-複製範例設定檔並填入你的設定：
+### 設定檔（選填）
+
+如需自訂技術參數，可複製範例設定檔：
 
 ```bash
 cp config/settings.json.example config/settings.json
 ```
 
-編輯 `config/settings.json`，填入：
+編輯 `config/settings.json` 可調整：
+- **app.logLevel**: 日誌等級（`debug` / `info` / `warn` / `error`）
+- **app.dataPath**: 資料儲存路徑（預設 `./data`）
+- **app.apiPort**: API server 埠號（預設 `3579`）
+- **download**: 下載佇列參數（並發數、重試次數等）
 
-- **llm.apiKey**: OpenAI 或 Gemini 的 API Key
-- **llm.provider**: `"openai"` / `"openai-compatible"` / `"gemini"`
+設定檔欄位詳見 `config/settings.json.example`。
 
-資料源（YouTube 頻道 / RSS Feed）透過 UI 管理，無需手動編輯設定檔。
+### UI 管理（必須）
 
-設定檔欄位詳見 `config/settings.json.example` 和 `doc/Phase0_模組設計文件.md`。
+1. **啟動應用**（CLI 或 Electron 模式）
+2. **開啟 Settings 頁面**：
+   - CLI 模式：瀏覽器訪問 `http://localhost:3579/settings`
+   - Electron 模式：系統匣右鍵 → Settings
+3. **配置 LLM**：
+   - 選擇 Provider（OpenAI / Gemini / OpenAI-compatible）
+   - 輸入 API Key 並驗證
+   - 選擇模型與參數
+4. **新增資料源**：點擊「新增資料源」添加 YouTube 頻道或 RSS Feed
+
+設定將自動儲存至資料庫，重啟後持續生效。
 
 ## 執行
 
-### CLI 模式
+### 開發模式選擇
+
+| 模式 | 指令 | 用途 |
+|------|------|------|
+| **CLI 模式** | `npm start` | 快速測試核心邏輯（無 UI hot-reload） |
+| **Electron 桌面模式** | `npm run electron:start` | 正式使用、測試桌面整合 |
+| **React UI 開發模式** | `npm start` + `npm run renderer:dev` | 修改 React 程式碼時使用（HMR） |
+
+---
+
+### 1. CLI 模式
 
 ```bash
 npm start
 ```
 
-啟動純 Node.js 模式（無 Electron tray，無 React UI hot-reload）。API server 在 `:3579`，
-可用瀏覽器開啟 `http://localhost:3579` 管理資料源（UI 為靜態 build）。按 `Ctrl+C` 停止。
+**說明**：
+- 啟動純 Node.js 模式（無 Electron tray）
+- 自動 rebuild `better-sqlite3` for Node.js ABI
+- API server 在 `:3579`，可用瀏覽器開啟 `http://localhost:3579` 管理資料源
+- 按 `Ctrl+C` 停止
 
-### Electron 桌面模式（正常使用）
+**適合**：快速測試核心邏輯、除錯 scheduler、測試 LLM 摘要
+
+---
+
+### 2. Electron 桌面模式（正常使用）
 
 ```bash
 npm run electron:start
 ```
 
-依序執行 `renderer:build` → `electron:rebuild` → `electron`，完整啟動桌面應用。
-啟動後常駐於系統匣（macOS menu bar / Windows 工作列），透過右鍵選單控制：
+**說明**：
+- 依序執行 `renderer:build` → `electron:rebuild` → `electron`
+- **重要**：自動 rebuild `better-sqlite3` for Electron ABI（強制覆蓋）
+- 啟動後常駐於系統匣（macOS menu bar / Windows 工作列）
 
-- **Settings** — 在瀏覽器開啟 `http://localhost:3579`（DataSources 管理 UI）
-- **Pause** — 暫停排程（API server 繼續運作，可繼續使用 UI）
-- **Resume** — 繼續排程
+**右鍵選單**：
+- **Settings** — 在瀏覽器開啟 `http://localhost:3579/#/settings`（管理 UI）
+- **Feeds** - 在瀏覽器開啟 `http://localhost:3579/#/feed`（檢視擷取資料 UI）
+- **Pause / Resume** — 控制排程（API server 繼續運作）
 - **Quit** — 結束應用
 
-> **注意**：`:5173` port 不會啟動；`:3579` serve 的是 build 出的靜態 UI。
-> 修改 React 程式碼後須重新執行 `npm run renderer:build` 才能反映，或改用下方「React UI 開發模式」。
+**注意**：
+- UI 是 build 出的靜態檔案（無 hot-reload）
+- 修改 React 程式碼後須重新執行 `npm run renderer:build`，或改用「React UI 開發模式」
 
-### React UI 開發模式（Hot-reload）
+---
+
+### 3. React UI 開發模式（Hot-reload）
 
 適合**修改 React UI 程式碼**時使用，需要兩個 terminal：
 
 ```bash
 # Terminal 1：啟動後端 API server
-npm start                    # Node.js backend，API server on :3579
+npm start                    # Node.js backend on :3579
 
 # Terminal 2：啟動 Vite dev server（hot-reload）
-npm run renderer:dev         # Vite dev server on :5173，proxy /api → :3579
-
-# 瀏覽器開啟
-http://localhost:5173        # React UI，修改程式碼後自動更新（HMR）
+npm run renderer:dev         # Vite dev server on :5173
 ```
 
+**瀏覽器**：開啟 `http://localhost:5173`
+
+**說明**：
 - Terminal 1 提供 API，Terminal 2 提供 React hot-reload
 - `/api/*` 請求由 Vite 自動 proxy 到 `:3579`
-- 修改 React 程式碼 → 瀏覽器立即更新
+- 修改 React 程式碼 → 瀏覽器立即更新（HMR）
 - 修改 Node.js 程式碼（`src/`）→ 重啟 Terminal 1
 
-### 關於 rebuild
+---
 
-`better-sqlite3` 是 native Node.js addon，編譯時會綁定特定的 **ABI（Application Binary Interface）版本**。
-Node.js 與 Electron 各自有自己的 ABI，同一份編譯結果無法跨環境使用：
+## 開發流程常見問題
 
-| 環境 | rebuild 指令 | 說明 |
-|------|-------------|------|
-| Node.js（CLI / 測試） | `npm run node:rebuild` | `npm rebuild better-sqlite3`，編譯成 Node.js ABI |
-| Electron（桌面模式） | `npm run electron:rebuild` | `@electron/rebuild`，編譯成 Electron ABI |
+### ❌ 錯誤：NODE_MODULE_VERSION mismatch
 
-`npm start` 和 `npm test` 會自動執行 `node:rebuild`；`npm run electron:start` 會自動執行 `electron:rebuild`。
+```
+Error: The module '/path/to/better_sqlite3.node'
+was compiled against a different Node.js version using
+NODE_MODULE_VERSION 127. This version requires NODE_MODULE_VERSION 143.
+```
 
-**何時需要手動執行 rebuild？**
+**原因**：在 CLI 模式和 Electron 模式之間切換時，`better-sqlite3` native module 的 ABI 版本不匹配。
 
-- 升級 Node.js 版本後，執行 `npm run node:rebuild`
-- 升級 Electron 版本後，執行 `npm run electron:rebuild`
-- 執行時出現 `NODE_MODULE_VERSION mismatch` 或 `was compiled against a different Node.js version` 錯誤
+**解決方式**：
 
-**跳過 rebuild 快速啟動**
+```bash
+# 方法 1：使用正確的啟動指令（自動 rebuild）
+npm run electron:start     # Electron 模式（會自動 rebuild）
+npm start                  # CLI 模式（會自動 rebuild）
 
-若確定 native module 已是正確 ABI（例如剛 rebuild 過），可跳過加速啟動：
+# 方法 2：手動 rebuild（僅在啟動指令失敗時使用）
+npm run electron:rebuild   # 切到 Electron ABI
+npm run node:rebuild       # 切到 Node.js ABI
+
+# 方法 3：清除 build cache 後重新安裝（最終手段）
+npm run rebuild:clean      # 一鍵清除 + rebuild for Electron
+```
+
+**預防措施**：
+- **不要混用** `node src/index.js` 和 `npm run electron` 跳過 rebuild 的指令
+- 切換模式時一律使用 `npm start` 或 `npm run electron:start`（會自動 rebuild）
+
+---
+
+### 關於 Native Module Rebuild
+
+`better-sqlite3` 是 native Node.js addon，編譯時會綁定特定的 **ABI（Application Binary Interface）版本**。Node.js 與 Electron 各自有自己的 ABI，同一份編譯結果無法跨環境使用。
+
+| 環境 | ABI 範例 | Rebuild 指令 |
+|------|---------|-------------|
+| Node.js v20.x | MODULE_VERSION 127 | `npm run node:rebuild` |
+| Electron v40.x | MODULE_VERSION 143 | `npm run electron:rebuild` |
+
+**自動 Rebuild**：
+- `npm start` → 自動執行 `node:rebuild`
+- `npm run electron:start` → 自動執行 `electron:rebuild`
+- `npm test` → 自動執行 `node:rebuild`
+
+**何時需要手動 Rebuild？**
+- ✅ 升級 Node.js 版本後 → `npm run node:rebuild`
+- ✅ 升級 Electron 版本後 → `npm run electron:rebuild`
+- ✅ 執行時出現 `NODE_MODULE_VERSION mismatch` 錯誤
+- ✅ 刪除 `node_modules` 重新安裝後
+
+**驗證 Rebuild 成功**：
+
+```bash
+# 驗證當前 better-sqlite3 是為哪個環境 build 的
+file node_modules/better-sqlite3/build/Release/better_sqlite3.node
+
+# macOS 範例輸出
+# Mach-O 64-bit dynamically linked shared library arm64  ← 正確
+```
+
+如果啟動時仍出現 MODULE_VERSION mismatch，執行：
+```bash
+npm run rebuild:clean  # 清除 build cache + rebuild for Electron
+```
+
+**快速啟動（跳過 Rebuild）**：
+
+僅在**確定** native module 已是正確 ABI 時使用（例如剛 rebuild 過）：
 
 ```bash
 # CLI 模式跳過 rebuild
 node src/index.js
 
-# Electron 模式跳過 rebuild（native module 已是 Electron ABI）
+# Electron 模式跳過 rebuild（需先確保已執行過 electron:rebuild）
 npm run electron
 ```
 
@@ -250,6 +347,7 @@ renderer/
 
 - `doc/Phase0_模組設計文件.md` — Phase 0 模組架構、介面、資料流程
 - `doc/Phase1_Electron整合設計文件.md` — Phase 1 AppEngine 與 Electron 整合設計
-- `doc/Phase2_DataSources_UI設計文件.md` — Phase 2 HTTP Server、REST API、React UI 設計
+- `doc/Phase2_DataSources_UI設計文件.md` — Phase 2 HTTP Server、REST API、React UI 設計、DataSource管理UI
 - `doc/Phase3_ContentFeed_設計文件.md` — Phase 3 Feed 閱讀介面、Content API、主題系統設計
+- `doc/Phase4_Settings_設計文件.md` — Phase 4 完整的設定UI，整合LLM的設定以及DataSource的管理
 - `CLAUDE.md` — AI 開發規範與架構導覽

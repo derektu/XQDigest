@@ -31,6 +31,15 @@ const styles = {
     letterSpacing: '0.02em',
     background: 'var(--color-bg-surface)',
   },
+  sortSelect: {
+    fontSize: 11,
+    padding: '2px 6px',
+    borderRadius: 3,
+    border: '1px solid var(--color-border)',
+    background: 'var(--color-bg-surface)',
+    color: 'var(--color-text-primary)',
+    cursor: 'pointer',
+  },
   cardListScroll: {
     flex: 1,
     overflowY: 'auto',
@@ -70,6 +79,8 @@ export default function FeedPage() {
     loadMore,
     selectItem,
     markUnread,
+    sortBy,
+    setSortBy,
   } = useContentFeed();
 
   const [cardWidth, setCardWidth] = useState(() =>
@@ -138,7 +149,19 @@ export default function FeedPage() {
 
       <div style={styles.cardList(cardWidth)}>
         <div style={styles.cardListHeader}>
-          {selectedSourceId ? '篩選中' : '全部'} · {items.length} 篇
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>
+              {selectedSourceId ? '篩選中' : '全部'} · {items.length} 篇
+            </span>
+            <select
+              style={styles.sortSelect}
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+            >
+              <option value="time">依時間排序</option>
+              <option value="unread">未讀優先</option>
+            </select>
+          </div>
         </div>
         <div style={styles.cardListScroll}>
           {items.length === 0 && !loading ? (

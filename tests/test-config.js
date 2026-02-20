@@ -5,16 +5,12 @@ const path = require('path');
 const ConfigManager = require('../src/config');
 
 const TMP_CONFIG = path.join(__dirname, '_tmp_settings.json');
+const TMP_PARTIAL_CONFIG = path.join(__dirname, '_tmp_partial_settings.json');
+const NON_EXISTENT_CONFIG = path.join(__dirname, '_tmp_nonexistent.json');
 
 const sampleConfig = {
-  version: '1.0',
   app: { logLevel: 'debug', dataPath: './test-data' },
   download: { concurrentLimit: 5, retryAttempts: 2, retryDelay: 500, timeoutMs: 10000 },
-  dataSources: [
-    { id: 's1', type: 'youtube', name: 'YT Channel', url: 'https://youtube.com/@test', checkInterval: 1800, enabled: true, prompt: '自訂 YouTube prompt' },
-    { id: 's2', type: 'rss', name: 'RSS Feed', url: 'https://example.com/feed', checkInterval: 3600, enabled: false },
-  ],
-  llm: { provider: 'openai', apiKey: 'test-key', model: 'gpt-4o-mini', baseUrl: null, summarizationPrompt: 'test', maxTokens: 500, temperature: 0.5 },
 };
 
 describe('ConfigManager', () => {
@@ -24,41 +20,20 @@ describe('ConfigManager', () => {
 
   after(() => {
     if (fs.existsSync(TMP_CONFIG)) fs.unlinkSync(TMP_CONFIG);
+    if (fs.existsSync(TMP_PARTIAL_CONFIG)) fs.unlinkSync(TMP_PARTIAL_CONFIG);
+    if (fs.existsSync(NON_EXISTENT_CONFIG)) fs.unlinkSync(NON_EXISTENT_CONFIG);
   });
 
   it('load() 應正確讀取 JSON 設定檔', () => {
     const cm = new ConfigManager(TMP_CONFIG);
     const config = cm.load();
-    assert.equal(config.version, '1.0');
     assert.equal(config.app.logLevel, 'debug');
+    assert.equal(config.download.concurrentLimit, 5);
   });
 
   it('get() 若未 load 過應自動載入', () => {
     const cm = new ConfigManager(TMP_CONFIG);
-    const config = cm.get();
-    assert.equal(config.version, '1.0');
-  });
-
-  it('getDataSources() 應回傳所有資料源', () => {
-    const cm = new ConfigManager(TMP_CONFIG);
-    cm.load();
-    assert.equal(cm.getDataSources().length, 2);
-  });
-
-  it('getEnabledDataSources() 應只回傳 enabled=true 的資料源', () => {
-    const cm = new ConfigManager(TMP_CONFIG);
-    cm.load();
-    const enabled = cm.getEnabledDataSources();
-    assert.equal(enabled.length, 1);
-    assert.equal(enabled[0].id, 's1');
-  });
-
-  it('getLLMConfig() 應回傳 llm 區塊', () => {
-    const cm = new ConfigManager(TMP_CONFIG);
-    cm.load();
-    const llm = cm.getLLMConfig();
-    assert.equal(llm.provider, 'openai');
-    assert.equal(llm.model, 'gpt-4o-mini');
+    assert.equal(cm.get().app.logLevel, 'debug');
   });
 
   it('getDownloadConfig() 應回傳 download 區塊', () => {
@@ -81,24 +56,6 @@ describe('ConfigManager', () => {
     const dataPath = cm.getDataPath();
     assert.ok(path.isAbsolute(dataPath));
     assert.ok(dataPath.endsWith('test-data'));
-  });
-
-  it('getSourcePrompt() 有自訂 prompt 的來源應回傳該 prompt', () => {
-    const cm = new ConfigManager(TMP_CONFIG);
-    cm.load();
-    assert.equal(cm.getSourcePrompt('s1'), '自訂 YouTube prompt');
-  });
-
-  it('getSourcePrompt() 無自訂 prompt 的來源應回傳 null', () => {
-    const cm = new ConfigManager(TMP_CONFIG);
-    cm.load();
-    assert.equal(cm.getSourcePrompt('s2'), null);
-  });
-
-  it('getSourcePrompt() 不存在的來源應回傳 null', () => {
-    const cm = new ConfigManager(TMP_CONFIG);
-    cm.load();
-    assert.equal(cm.getSourcePrompt('nonexistent'), null);
   });
 
   it('設定檔變更應觸發 changed 事件', async () => {
@@ -152,5 +109,110 @@ describe('ConfigManager', () => {
     } finally {
       cm.stopWatching();
     }
+  });
+
+  // 預設值相關測試
+  it('ConfigManager 無設定檔時應使用預設值', () => {
+    const cm = new ConfigManager(NON_EXISTENT_CONFIG);
+    const config = cm.load();
+
+    // 驗證關鍵預設值
+    assert.equal(config.app.logLevel, 'info');
+    assert.equal(config.app.dataPath, './data');
+    assert.equal(config.app.apiPort, 3579);
+    assert.equal(config.download.concurrentLimit, 3);
+    assert.equal(config.download.retryAttempts, 3);
+    assert.equal(config.download.retryDelay, 1000);
+    assert.equal(config.download.timeoutMs, 30000);
+  });
+
+  it('ConfigManager 應正確合併設定檔與預設值', () => {
+    // 只覆蓋部分參數
+    const partialConfig = {
+      app: { logLevel: 'debug' },
+      download: { concurrentLimit: 5 },
+    };
+    fs.writeFileSync(TMP_PARTIAL_CONFIG, JSON.stringify(partialConfig, null, 2));
+
+    const cm = new ConfigManager(TMP_PARTIAL_CONFIG);
+    const config = cm.load();
+
+    // 被覆蓋的值
+    assert.equal(config.app.logLevel, 'debug');
+    assert.equal(config.download.concurrentLimit, 5);
+
+    // 保留預設值的欄位
+    assert.equal(config.app.dataPath, './data');
+    assert.equal(config.app.apiPort, 3579);
+    assert.equal(config.download.retryAttempts, 3);
+    assert.equal(config.download.retryDelay, 1000);
+    assert.equal(config.download.timeoutMs, 30000);
+  });
+
+  it('用戶設定應覆蓋預設值', () => {
+    const customConfig = {
+      app: {
+        logLevel: 'error',
+        dataPath: './custom-data',
+        apiPort: 9999,
+      },
+      download: {
+        concurrentLimit: 10,
+        retryAttempts: 5,
+        retryDelay: 2000,
+        timeoutMs: 60000,
+      },
+    };
+    fs.writeFileSync(TMP_PARTIAL_CONFIG, JSON.stringify(customConfig, null, 2));
+
+    const cm = new ConfigManager(TMP_PARTIAL_CONFIG);
+    const config = cm.load();
+
+    // 所有值都被覆蓋
+    assert.equal(config.app.logLevel, 'error');
+    assert.equal(config.app.dataPath, './custom-data');
+    assert.equal(config.app.apiPort, 9999);
+    assert.equal(config.download.concurrentLimit, 10);
+    assert.equal(config.download.retryAttempts, 5);
+    assert.equal(config.download.retryDelay, 2000);
+    assert.equal(config.download.timeoutMs, 60000);
+  });
+
+  it('部分覆蓋時其餘應保留預設值', () => {
+    const partialConfig = {
+      app: { logLevel: 'warn' },
+      // download 區塊完全不設定
+    };
+    fs.writeFileSync(TMP_PARTIAL_CONFIG, JSON.stringify(partialConfig, null, 2));
+
+    const cm = new ConfigManager(TMP_PARTIAL_CONFIG);
+    const config = cm.load();
+
+    // 覆蓋的值
+    assert.equal(config.app.logLevel, 'warn');
+
+    // 未覆蓋的 app 參數保留預設值
+    assert.equal(config.app.dataPath, './data');
+    assert.equal(config.app.apiPort, 3579);
+
+    // download 整個區塊保留預設值
+    assert.equal(config.download.concurrentLimit, 3);
+    assert.equal(config.download.retryAttempts, 3);
+    assert.equal(config.download.retryDelay, 1000);
+    assert.equal(config.download.timeoutMs, 30000);
+  });
+
+  it('getDefaults() 應回傳預設配置副本', () => {
+    const defaults1 = ConfigManager.getDefaults();
+    const defaults2 = ConfigManager.getDefaults();
+
+    // 驗證內容正確
+    assert.equal(defaults1.app.logLevel, 'info');
+    assert.equal(defaults1.app.dataPath, './data');
+
+    // 驗證是副本（不是同一物件）
+    assert.notEqual(defaults1, defaults2);
+    defaults1.app.logLevel = 'modified';
+    assert.equal(defaults2.app.logLevel, 'info'); // 不應被影響
   });
 });

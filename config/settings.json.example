@@ -1,5 +1,6 @@
 {
-  "version": "1.0",
+  "_預設參數": "以下是預設參數, 如果需要override, 請建立settings.json, 填入預期的參數",
+  "_注意": "LLM 設定與資料源設定已改為在 UI 管理，不再需要在此設定檔中配置",
 
   "app": {
     "logLevel": "info",
@@ -12,15 +13,5 @@
     "retryAttempts": 3,
     "retryDelay": 1000,
     "timeoutMs": 30000
-  },
-
-  "llm": {
-    "provider": "openai",
-    "apiKey": "",
-    "model": "gpt-4o-mini",
-    "baseUrl": null,
-    "summarizationPrompt": "",
-    "maxTokens": 4096,
-    "temperature": 0.7
   }
 }

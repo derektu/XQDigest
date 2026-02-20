@@ -59,3 +59,9 @@ CREATE TABLE IF NOT EXISTS failed_items (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_failed_items_item_id ON failed_items(item_id);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL,          -- JSON 字串
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

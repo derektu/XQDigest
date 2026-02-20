@@ -40,6 +40,7 @@ describe('DB', () => {
     assert.ok(tables.includes('data_sources'));
     assert.ok(tables.includes('llm_configs'));
     assert.ok(tables.includes('failed_items'));
+    assert.ok(tables.includes('app_settings'));
   });
 
   it('insertContentItem() 應成功插入一筆記錄', () => {
@@ -153,6 +154,37 @@ describe('DB', () => {
     const filtered = db.getFailedItems({ sourceId: 'src-1' });
     assert.equal(filtered.length, 1);
     assert.equal(filtered[0].item_id, 'fail-001');
+  });
+
+  // --- app_settings ---
+
+  it('getAppSetting() 不存在的 key 應回傳 null', () => {
+    assert.equal(db.getAppSetting('nonexistent'), null);
+  });
+
+  it('setAppSetting() 應儲存並回傳 JSON 物件', () => {
+    const value = { provider: 'openai', apiKey: 'sk-test', model: 'gpt-4o-mini' };
+    db.setAppSetting('llm', value);
+    const result = db.getAppSetting('llm');
+    assert.equal(result.provider, 'openai');
+    assert.equal(result.apiKey, 'sk-test');
+    assert.equal(result.model, 'gpt-4o-mini');
+  });
+
+  it('setAppSetting() 重複 key 應覆蓋（INSERT OR REPLACE）', () => {
+    db.setAppSetting('llm', { provider: 'gemini', apiKey: 'new-key', model: 'gemini-pro' });
+    const result = db.getAppSetting('llm');
+    assert.equal(result.provider, 'gemini');
+    assert.equal(result.apiKey, 'new-key');
+  });
+
+  it('setAppSetting() 應支援不同 key', () => {
+    db.setAppSetting('other_setting', { foo: 'bar' });
+    const result = db.getAppSetting('other_setting');
+    assert.equal(result.foo, 'bar');
+    // llm key 不受影響
+    const llm = db.getAppSetting('llm');
+    assert.equal(llm.provider, 'gemini');
   });
 
   it('getStats() 應回傳正確統計', () => {

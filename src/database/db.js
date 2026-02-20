@@ -194,6 +194,20 @@ class DB {
     };
   }
 
+  // --- app_settings ---
+
+  getAppSetting(key) {
+    const row = this.db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
+    if (!row) return null;
+    try { return JSON.parse(row.value); } catch (_) { return null; }
+  }
+
+  setAppSetting(key, value) {
+    return this.db.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+    ).run(key, JSON.stringify(value));
+  }
+
   // --- stats ---
 
   getStats() {

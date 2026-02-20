@@ -42,10 +42,17 @@ class TrayManager {
       { label: 'XQDigest', enabled: false },
       { type: 'separator' },
       {
+        label: 'Feeds',
+        enabled: hasPort,
+        click: () => {
+          shell.openExternal(`http://localhost:${this._port}/#/feed`);
+        },
+      },
+      {
         label: 'Settings',
         enabled: hasPort,
         click: () => {
-          shell.openExternal(`http://localhost:${this._port}`);
+          shell.openExternal(`http://localhost:${this._port}/#/settings`);
         },
       },
       { type: 'separator' },

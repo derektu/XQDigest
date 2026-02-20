@@ -24,7 +24,11 @@ const inputSearch = {
   fontSize: 13, width: 200,
 };
 
-export default function DataSourcesPage() {
+/**
+ * 資料源管理核心邏輯（無 page wrapper）
+ * 可嵌入 SettingsPage 或獨立使用
+ */
+export function DataSourcesContent() {
   const { list, loading, error, add, update, remove, toggle, validate, checkNow, getStats } = useDataSources();
   const [showForm, setShowForm] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
@@ -162,4 +166,11 @@ export default function DataSourcesPage() {
       )}
     </div>
   );
+}
+
+/**
+ * DataSourcesPage wrapper（向後相容）
+ */
+export default function DataSourcesPage() {
+  return <DataSourcesContent />;
 }

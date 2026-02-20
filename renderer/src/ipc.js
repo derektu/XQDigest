@@ -39,3 +39,9 @@ export const content = {
   markRead: (id, isRead) => _request('PATCH', `/api/content/${id}/read`, { is_read: isRead ? 1 : 0 }),
   unreadCounts: () => _request('GET', '/api/content/unread-counts'),
 };
+
+export const settings = {
+  getLLM:    ()       => _request('GET',  '/api/settings/llm'),
+  updateLLM: (data)   => _request('PUT',  '/api/settings/llm', data),
+  testLLM:   (params) => _request('POST', '/api/settings/llm/test', params),
+};

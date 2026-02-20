@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { dataSources } from '../ipc';
+import { dataSources, engine as engineIpc } from '../ipc';
 import ThemeControls from './ThemeControls';
 
 const styles = {
@@ -84,16 +84,38 @@ const styles = {
     width: '100%',
     transition: 'color 0.15s',
   },
+  llmWarning: {
+    padding: '8px 14px',
+    background: 'rgba(255,160,0,0.12)',
+    borderTop: '1px solid rgba(255,160,0,0.3)',
+    fontSize: 11,
+    color: '#c97c00',
+    cursor: 'pointer',
+    lineHeight: 1.4,
+  },
 };
 
 export default function SourceNav({ selectedSourceId, onSelect, unreadCounts }) {
   const navigate = useNavigate();
   const [sources, setSources] = useState([]);
+  const [llmConfigured, setLlmConfigured] = useState(true);
 
   useEffect(() => {
     dataSources.list()
       .then(data => setSources(data))
       .catch(() => setSources([]));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = () => {
+      engineIpc.getStatus()
+        .then(s => { if (!cancelled) setLlmConfigured(s.llmConfigured); })
+        .catch(() => {});
+    };
+    check();
+    const interval = setInterval(check, 10000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
   const allUnread = unreadCounts?.all ?? 0;
@@ -130,10 +152,15 @@ export default function SourceNav({ selectedSourceId, onSelect, unreadCounts }) 
       })}
 
       <div style={styles.footer}>
+        {!llmConfigured && (
+          <div style={styles.llmWarning} onClick={() => navigate('/settings')}>
+            ⚠ LLM 尚未設定 → 前往設定
+          </div>
+        )}
         <ThemeControls />
         <div style={{ borderTop: '1px solid var(--color-border-light)' }}>
-          <button style={styles.footerLink} onClick={() => navigate('/datasources')}>
-            DataSources 管理 →
+          <button style={styles.footerLink} onClick={() => navigate('/settings')}>
+            ⚙ 設定
           </button>
         </div>
       </div>

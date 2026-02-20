@@ -26,10 +26,13 @@ function captureLogger() {
 }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-function mockConfigManager(sources = []) {
+function mockConfigManager() {
+  return {};  // 空物件即可，DataSourceManager 負責資料源管理
+}
+
+function mockDataSourceManager(sources = []) {
   return {
-    getEnabledDataSources: () => sources,
-    getLLMConfig: () => ({ provider: 'openai', apiKey: '' }),
+    getEnabled: () => sources,
     getSourcePrompt: () => null,
   };
 }
@@ -59,8 +62,8 @@ describe('Scheduler', () => {
 
   it('start() / stop() 應正確控制排程狀態', () => {
     const scheduler = new Scheduler({
-      configManager: mockConfigManager(), queue: new DownloadQueue(),
-      youtubeFetcher: mockYT(), rssFetcher: mockRSS(),
+      configManager: mockConfigManager(), dataSourceManager: mockDataSourceManager(),
+      queue: new DownloadQueue(), youtubeFetcher: mockYT(), rssFetcher: mockRSS(),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
     });
     scheduler.start();
@@ -80,7 +83,8 @@ describe('Scheduler', () => {
     ];
 
     const scheduler = new Scheduler({
-      configManager: mockConfigManager([
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'Test', url: 'http://x/feed', checkInterval: 9999, enabled: true },
       ]),
       queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
@@ -103,7 +107,8 @@ describe('Scheduler', () => {
     const rssItems = [{ itemId: 'dup-1', title: 'Dup', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }];
 
     const scheduler = new Scheduler({
-      configManager: mockConfigManager([
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
       queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
@@ -136,7 +141,8 @@ describe('Scheduler', () => {
     };
 
     const scheduler = new Scheduler({
-      configManager: mockConfigManager([
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
       queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
@@ -164,7 +170,8 @@ describe('Scheduler', () => {
     };
 
     const scheduler = new Scheduler({
-      configManager: mockConfigManager([
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'youtube', name: 'YT', url: 'https://youtube.com/@test', checkInterval: 9999, enabled: true },
       ]),
       queue, youtubeFetcher: ytMock, rssFetcher: mockRSS(),
@@ -190,13 +197,10 @@ describe('Scheduler', () => {
     };
 
     const scheduler = new Scheduler({
-      configManager: {
-        getEnabledDataSources: () => [
-          { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
-        ],
-        getLLMConfig: () => ({ provider: 'openai', apiKey: 'has-key' }),
-        getSourcePrompt: () => null,
-      },
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
+        { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
+      ]),
       queue, youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'llm-1', title: 'LLM Test', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: llmMock, storage: new Storage(db, TMP_DIR), db, logger,
@@ -220,11 +224,11 @@ describe('Scheduler', () => {
 
     const customPromptText = '自訂財經分析 prompt';
     const scheduler = new Scheduler({
-      configManager: {
-        getEnabledDataSources: () => [
+      configManager: mockConfigManager(),
+      dataSourceManager: {
+        getEnabled: () => [
           { id: 'src-custom', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
         ],
-        getLLMConfig: () => ({ provider: 'openai', apiKey: 'has-key' }),
         getSourcePrompt: (id) => id === 'src-custom' ? customPromptText : null,
       },
       queue, youtubeFetcher: mockYT(),
@@ -244,7 +248,8 @@ describe('Scheduler', () => {
     queue.on('taskCompleted', () => count++);
 
     const scheduler = new Scheduler({
-      configManager: mockConfigManager([
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
         { id: 'src-a', type: 'rss', name: 'A', url: 'http://a', checkInterval: 9999, enabled: true },
         { id: 'src-b', type: 'rss', name: 'B', url: 'http://b', checkInterval: 9999, enabled: true },
       ]),
@@ -276,7 +281,8 @@ describe('Scheduler', () => {
     ];
 
     const scheduler = new Scheduler({
-      configManager: mockConfigManager([
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true, lookbackDays: 3 },
       ]),
       queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
@@ -302,7 +308,8 @@ describe('Scheduler', () => {
     }
 
     const scheduler = new Scheduler({
-      configManager: mockConfigManager([
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true, maxItems: 3 },
       ]),
       queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
@@ -332,7 +339,8 @@ describe('Scheduler', () => {
     ];
 
     const scheduler = new Scheduler({
-      configManager: mockConfigManager([
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true, lookbackDays: 3, maxItems: 2 },
       ]),
       queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
@@ -358,7 +366,8 @@ describe('Scheduler', () => {
     }
 
     const scheduler = new Scheduler({
-      configManager: mockConfigManager([
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
       queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
@@ -381,13 +390,10 @@ describe('Scheduler', () => {
     };
 
     const scheduler = new Scheduler({
-      configManager: {
-        getEnabledDataSources: () => [
-          { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
-        ],
-        getLLMConfig: () => ({ provider: 'openai', apiKey: 'has-key' }),
-        getSourcePrompt: () => null,
-      },
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
+        { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
+      ]),
       queue, youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'fail-1', title: 'Fail', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: llmMock, storage: new Storage(db, TMP_DIR), db, logger,
@@ -416,13 +422,10 @@ describe('Scheduler', () => {
     };
 
     const scheduler = new Scheduler({
-      configManager: {
-        getEnabledDataSources: () => [
-          { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
-        ],
-        getLLMConfig: () => ({ provider: 'openai', apiKey: 'has-key' }),
-        getSourcePrompt: () => null,
-      },
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
+        { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
+      ]),
       queue, youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'transient-1', title: 'Transient', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: llmMock, storage: new Storage(db, TMP_DIR), db, logger,
@@ -446,7 +449,8 @@ describe('Scheduler', () => {
     const queue = new DownloadQueue({ concurrentLimit: 3 });
 
     const scheduler = new Scheduler({
-      configManager: mockConfigManager([
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'MySource', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
       queue, youtubeFetcher: mockYT(),
@@ -470,13 +474,10 @@ describe('Scheduler', () => {
     const queue = new DownloadQueue({ concurrentLimit: 3, retryAttempts: 0 });
 
     const scheduler = new Scheduler({
-      configManager: {
-        getEnabledDataSources: () => [
-          { id: 'src', type: 'rss', name: 'FailSource', url: 'http://x', checkInterval: 9999, enabled: true },
-        ],
-        getLLMConfig: () => ({ provider: 'openai', apiKey: 'has-key' }),
-        getSourcePrompt: () => null,
-      },
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
+        { id: 'src', type: 'rss', name: 'FailSource', url: 'http://x', checkInterval: 9999, enabled: true },
+      ]),
       queue, youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'errlog-1', title: 'Error Item', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: { summarize: async () => { throw new Error('API timeout'); } },
@@ -505,7 +506,8 @@ describe('Scheduler', () => {
     };
 
     const scheduler = new Scheduler({
-      configManager: mockConfigManager([
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
         { id: 'yt-src', type: 'youtube', name: 'YT', url: 'https://youtube.com/@test', checkInterval: 9999, enabled: true },
       ]),
       queue, youtubeFetcher: ytMock, rssFetcher: mockRSS(),
@@ -537,7 +539,8 @@ describe('Scheduler', () => {
     };
 
     const scheduler = new Scheduler({
-      configManager: mockConfigManager([
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
         { id: 'yt-src2', type: 'youtube', name: 'YT2', url: 'https://youtube.com/@test2', checkInterval: 9999, enabled: true },
       ]),
       queue, youtubeFetcher: ytMock, rssFetcher: mockRSS(),
@@ -560,13 +563,10 @@ describe('Scheduler', () => {
 
     let callCount = 0;
     const scheduler = new Scheduler({
-      configManager: {
-        getEnabledDataSources: () => [
-          { id: 'src', type: 'rss', name: 'RetrySource', url: 'http://x', checkInterval: 9999, enabled: true },
-        ],
-        getLLMConfig: () => ({ provider: 'openai', apiKey: 'has-key' }),
-        getSourcePrompt: () => null,
-      },
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
+        { id: 'src', type: 'rss', name: 'RetrySource', url: 'http://x', checkInterval: 9999, enabled: true },
+      ]),
       queue, youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'retrylog-1', title: 'Retry Item', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: { summarize: async () => { callCount++; if (callCount <= 1) throw new Error('Transient'); return 'OK'; } },

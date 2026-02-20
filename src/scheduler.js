@@ -51,23 +51,17 @@ class Scheduler {
   }
 
   /**
-   * Get enabled data sources — prefer DataSourceManager (DB), fall back to ConfigManager (JSON).
+   * Get enabled data sources from DataSourceManager (DB).
    */
   _getEnabledSources() {
-    if (this.dataSourceManager) {
-      return this.dataSourceManager.getEnabled();
-    }
-    return this.configManager.getEnabledDataSources();
+    return this.dataSourceManager.getEnabled();
   }
 
   /**
-   * Get source prompt by ID — prefer DataSourceManager, fall back to ConfigManager.
+   * Get source prompt by ID from DataSourceManager (DB).
    */
   _getSourcePrompt(sourceId) {
-    if (this.dataSourceManager) {
-      return this.dataSourceManager.getSourcePrompt(sourceId);
-    }
-    return this.configManager.getSourcePrompt(sourceId);
+    return this.dataSourceManager.getSourcePrompt(sourceId);
   }
 
   start() {
@@ -142,6 +136,10 @@ class Scheduler {
       this.cronJobs.splice(idx, 1);
       this.logger.info(`Removed schedule for source: ${sourceId}`);
     }
+  }
+
+  updateLLMService(llmService) {
+    this.llmService = llmService;
   }
 
   _setupJobs() {
@@ -278,13 +276,12 @@ class Scheduler {
       }
 
       let summaryText = null;
-      const llmConfig = this.configManager.getLLMConfig();
-      if (llmConfig && llmConfig.apiKey) {
+      if (this.llmService) {
         const sourcePrompt = this._getSourcePrompt(source.id);
         summaryText = await this.llmService.summarize(item.content, item.title, sourcePrompt);
         this.logger.info(`${tag} Summary generated: "${item.title}"`);
       } else {
-        this.logger.warn(`${tag} No LLM API key configured, skipping summary`);
+        this.logger.warn(`${tag} No LLM service configured, skipping summary`);
       }
 
       await this.storage.saveContent(item);

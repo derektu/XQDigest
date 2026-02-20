@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { content as contentApi } from '../ipc';
 
 const PAGE_SIZE = 20;
@@ -11,6 +11,7 @@ export default function useContentFeed() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [sortBy, setSortBy] = useState('time'); // 'time' or 'unread'
   const offsetRef = useRef(0);
   const loadingRef = useRef(false);
 
@@ -100,8 +101,27 @@ export default function useContentFeed() {
     }
   }, [selectedItem]);
 
+  // Client-side 排序
+  const sortedItems = useMemo(() => {
+    const sorted = [...items];
+    if (sortBy === 'unread') {
+      // 未讀優先 (is_read: 0=未讀, 1=已讀)，同為未讀/已讀時依時間降序
+      sorted.sort((a, b) => {
+        if (a.is_read !== b.is_read) {
+          return a.is_read - b.is_read; // 0 (unread) before 1 (read)
+        }
+        // 同樣 read status 時依時間降序
+        return new Date(b.published_date) - new Date(a.published_date);
+      });
+    } else {
+      // 預設：依發布時間降序
+      sorted.sort((a, b) => new Date(b.published_date) - new Date(a.published_date));
+    }
+    return sorted;
+  }, [items, sortBy]);
+
   return {
-    items,
+    items: sortedItems,  // 回傳排序後的 items
     unreadCounts,
     selectedSourceId,
     setSelectedSourceId,
@@ -113,5 +133,7 @@ export default function useContentFeed() {
     selectItem,
     markUnread,
     refreshCounts: fetchUnreadCounts,
+    sortBy,
+    setSortBy,
   };
 }

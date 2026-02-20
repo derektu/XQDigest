@@ -1,5 +1,6 @@
 const YouTubeFetcher = require('./fetchers/youtube');
 const RSSFetcher = require('./fetchers/rss');
+const OpenAI = require('openai');
 
 /**
  * Build route table for the API server.
@@ -232,6 +233,88 @@ function createRoutes(engine) {
       pattern: '/api/engine/status',
       handler: () => {
         return { data: engine.getStatus() };
+      },
+    },
+
+    // --- settings/llm ---
+
+    {
+      method: 'GET',
+      pattern: '/api/settings/llm',
+      handler: () => {
+        const settings = engine.getLLMSettings ? engine.getLLMSettings() : null;
+        if (!settings) return { data: null };
+        const masked = { ...settings };
+        if (masked.apiKey) {
+          masked.apiKey = '****' + masked.apiKey.slice(-4);
+        }
+        return { data: masked };
+      },
+    },
+    {
+      method: 'PUT',
+      pattern: '/api/settings/llm',
+      handler: (_params, body) => {
+        if (!engine.setLLMSettings) {
+          const err = new Error('Engine not running');
+          err.statusCode = 503;
+          throw err;
+        }
+        const data = { ...body };
+        // If apiKey is masked (starts with ****), preserve existing key
+        if (data.apiKey && data.apiKey.startsWith('****')) {
+          const existing = engine.getLLMSettings();
+          data.apiKey = existing ? existing.apiKey : undefined;
+        }
+        engine.setLLMSettings(data);
+        return { data: { ok: true } };
+      },
+    },
+    {
+      method: 'POST',
+      pattern: '/api/settings/llm/test',
+      handler: async (_params, body) => {
+        const { provider, apiKey, baseUrl } = body || {};
+        if (!provider || !apiKey) {
+          return { data: { valid: false, error: 'provider and apiKey are required' } };
+        }
+        try {
+          if (provider === 'gemini') {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+            const res = await fetch(url);
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              return { data: { valid: false, error: err.error?.message || `HTTP ${res.status}` } };
+            }
+            const json = await res.json();
+            const models = (json.models || [])
+              .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+              .map(m => m.name.replace('models/', ''));
+            return { data: { valid: true, models } };
+          } else {
+            // openai or openai-compatible
+            const options = { apiKey };
+            if (baseUrl) options.baseURL = baseUrl;
+            const client = new OpenAI(options);
+            let models = [];
+            try {
+              const list = await client.models.list();
+              models = list.data
+                .map(m => m.id)
+                .filter(id => id.includes('gpt-') || (baseUrl ? true : false))
+                .sort();
+            } catch (_) {
+              // openai-compatible may not support model listing
+              if (provider === 'openai-compatible') {
+                return { data: { valid: true, models: [] } };
+              }
+              throw _;
+            }
+            return { data: { valid: true, models } };
+          }
+        } catch (err) {
+          return { data: { valid: false, error: err.message } };
+        }
       },
     },
   ];

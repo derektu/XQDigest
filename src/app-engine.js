@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('node:fs');
 const { EventEmitter } = require('events');
 const ConfigManager = require('./config');
 const Logger = require('./logger');
@@ -16,6 +17,20 @@ const LLMService = require('./llm');
 const { LLMServiceConfig } = require('./llm');
 const Scheduler = require('./scheduler');
 const ApiServer = require('./api-server');
+
+/**
+ * Resolve the yt-dlp binary path.
+ * In a packaged Electron app, process.resourcesPath points to the Resources folder
+ * where electron-builder places extraResources. Falls back to system PATH in dev mode.
+ */
+function resolveYtDlpBin() {
+  if (process.resourcesPath) {
+    const ext = process.platform === 'win32' ? '.exe' : '';
+    const bundled = path.join(process.resourcesPath, 'bin', `yt-dlp${ext}`);
+    if (fs.existsSync(bundled)) return bundled;
+  }
+  return 'yt-dlp';
+}
 
 const STATES = {
   STOPPED: 'stopped',
@@ -111,7 +126,10 @@ class AppEngine extends EventEmitter {
       const config = this._configManager.get();
 
       // 2. Init logger
-      const logDir = path.resolve(__dirname, '../logs');
+      const dataPath = this._configManager.getDataPath();
+      const logDir = process.env.XQDIGEST_DATA_PATH
+        ? path.join(process.env.XQDIGEST_DATA_PATH, 'logs')
+        : path.resolve(__dirname, '../logs');
       Logger.init(new LoggerConfig({
         level: this._configManager.getLogLevel(),
         logDir,
@@ -120,7 +138,6 @@ class AppEngine extends EventEmitter {
       this._logger.info('XQDigest starting...');
 
       // 3. Init database
-      const dataPath = this._configManager.getDataPath();
       const dbPath = path.join(dataPath, 'database', 'content.db');
       this._db = new DB(dbPath);
       this._db.open();
@@ -154,7 +171,7 @@ class AppEngine extends EventEmitter {
       });
 
       // 7. Init fetchers
-      const youtubeFetcher = new YouTubeFetcher();
+      const youtubeFetcher = new YouTubeFetcher({ ytDlpBin: resolveYtDlpBin() });
       const rssFetcher = new RSSFetcher();
 
       // 8. Init LLM logger

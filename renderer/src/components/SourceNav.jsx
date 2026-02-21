@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { dataSources, engine as engineIpc } from '../ipc';
+import { dataSources, engine as engineIpc, app as appIpc } from '../ipc';
 import ThemeControls from './ThemeControls';
 
 const styles = {
@@ -100,6 +100,11 @@ export default function SourceNav({ selectedSourceId, onSelect, unreadCounts }) 
   const navigate = useNavigate();
   const [sources, setSources] = useState([]);
   const [llmConfigured, setLlmConfigured] = useState(true);
+  const [version, setVersion] = useState(null);
+
+  useEffect(() => {
+    appIpc.getVersion().then(r => setVersion(r.version)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     dataSources.list()
@@ -126,6 +131,9 @@ export default function SourceNav({ selectedSourceId, onSelect, unreadCounts }) 
       <div style={styles.logoArea}>
         <div style={styles.logoTitle}>XQDigest</div>
         <div style={styles.logoSubtitle}>財經資訊摘要</div>
+        {version && (
+          <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 2 }}>v{version}</div>
+        )}
       </div>
 
       <div style={styles.sectionHeader}>來源</div>

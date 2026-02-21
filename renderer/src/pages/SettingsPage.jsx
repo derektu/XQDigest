@@ -368,7 +368,6 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'llm';
-
   const handleTabChange = (tabId) => {
     // 使用 replace 避免每次切換 tab 都產生新的 history entry
     setSearchParams({ tab: tabId }, { replace: true });

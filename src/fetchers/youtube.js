@@ -15,6 +15,10 @@ class PermanentError extends Error {
   }
 }
 
+// Subtitle language priority: Traditional Chinese, Simplified Chinese, English.
+// zh-TW / zh-Hant = 繁體中文（兩種代碼皆可能出現）
+// zh-Hans / zh-CN = 簡體中文（兩種代碼皆可能出現）
+// en = 英文 fallback
 const TRANSCRIPT_LANG_PRIORITY = ['zh-TW', 'zh-Hant', 'zh-Hans', 'zh-CN', 'en'];
 
 class YouTubeFetcher {
@@ -24,9 +28,10 @@ class YouTubeFetcher {
     return YouTubeFetcher.CHANNEL_URL_PATTERN.test(url);
   }
 
-  constructor(logger) {
+  constructor({ logger, ytDlpBin } = {}) {
     this.logger = logger || Logger.getLogger('YouTubeFetcher');
     this._rssParser = new RssParser();
+    this._ytDlpBin = ytDlpBin || 'yt-dlp';
   }
 
   /**
@@ -59,32 +64,24 @@ class YouTubeFetcher {
 
   /**
    * Download transcript for a YouTube video using yt-dlp.
-   * Tries both manual and auto-generated subtitles in priority order:
-   * zh-TW, zh-Hant, zh-Hans, zh-CN, en.
+   * Downloads both manual and auto-generated subtitles in a single call,
+   * then picks the best available language from TRANSCRIPT_LANG_PRIORITY.
    * @param {string} videoId
    * @returns {string} Full transcript text
    */
   async fetchTranscript(videoId) {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ytdlp-sub-'));
     try {
-      for (const lang of TRANSCRIPT_LANG_PRIORITY) {
-        try {
-          await this._runYtDlp(videoId, lang, tmpDir);
-          const files = fs.readdirSync(tmpDir).filter(f => f.endsWith('.vtt'));
-          if (files.length > 0) {
-            const vtt = fs.readFileSync(path.join(tmpDir, files[0]), 'utf-8');
-            const text = this._parseVTT(vtt);
-            if (text.length > 0) {
-              this.logger.debug(`Transcript fetched via yt-dlp for ${videoId} in language: ${lang}`);
-              return text;
-            }
-          }
-        } catch {
-          this.logger.debug(`yt-dlp: no subtitle in ${lang} for ${videoId}`);
-        }
-        // Clean files for next attempt
-        for (const f of fs.readdirSync(tmpDir)) {
-          fs.unlinkSync(path.join(tmpDir, f));
+      await this._runYtDlp(videoId, tmpDir);
+      const files = fs.readdirSync(tmpDir).filter(f => f.endsWith('.vtt'));
+      if (files.length > 0) {
+        const picked = this._pickBestVtt(files) || files[0];
+        const vtt = fs.readFileSync(path.join(tmpDir, picked), 'utf-8');
+        const text = this._parseVTT(vtt);
+        if (text.length > 0) {
+          const lang = picked.match(/\.([^.]+)\.vtt$/)?.[1] || 'unknown';
+          this.logger.debug(`Transcript fetched via yt-dlp for ${videoId} in language: ${lang}`);
+          return text;
         }
       }
       throw new PermanentError(`yt-dlp: no subtitles found for ${videoId}`);
@@ -95,21 +92,36 @@ class YouTubeFetcher {
 
   /**
    * Run yt-dlp to download subtitles for a video.
+   * Uses both --write-subs (manual/finalized) and --write-auto-sub (live ASR),
+   * requesting all preferred languages in one call.
    */
-  _runYtDlp(videoId, lang, outputDir) {
+  _runYtDlp(videoId, outputDir) {
     return new Promise((resolve, reject) => {
       const url = `https://www.youtube.com/watch?v=${videoId}`;
       const args = [
-        '--write-auto-sub', '--sub-lang', lang, '--sub-format', 'vtt',
+        '--write-sub', '--write-auto-sub',
+        '--sub-lang', TRANSCRIPT_LANG_PRIORITY.join(','),
+        '--sub-format', 'vtt',
         '--skip-download', '--no-warnings', '--no-progress',
         '-o', path.join(outputDir, 'sub'),
         url,
       ];
-      execFile('yt-dlp', args, { timeout: 30000 }, (err, stdout, stderr) => {
+      execFile(this._ytDlpBin, args, { timeout: 60000 }, (err, stdout, stderr) => {
         if (err) return reject(err);
         resolve(stdout);
       });
     });
+  }
+
+  /**
+   * Pick the best VTT file from a list based on TRANSCRIPT_LANG_PRIORITY.
+   */
+  _pickBestVtt(files) {
+    for (const lang of TRANSCRIPT_LANG_PRIORITY) {
+      const match = files.find(f => f.includes(`.${lang}.`));
+      if (match) return match;
+    }
+    return null;
   }
 
   /**

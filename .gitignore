@@ -17,5 +17,11 @@ dist-renderer/
 # Personal scratch pad
 doc/Tasks.md
 
+# electron-builder 輸出
+dist/
+
+# Downloaded yt-dlp binaries (generated at build time)
+build/bin/
+
 # Temp test directories
 tests/_tmp_*/

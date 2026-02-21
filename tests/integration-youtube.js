@@ -36,7 +36,7 @@ describe('validateChannelUrl()', () => {
   });
 
   it('fetchRecentVideos() 傳入無效 URL 應拋出格式錯誤', async () => {
-    const fetcher = new YouTubeFetcher(logger);
+    const fetcher = new YouTubeFetcher({ logger });
     await assert.rejects(
       () => fetcher.fetchRecentVideos('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
       { message: /Invalid YouTube channel URL format/ },
@@ -45,7 +45,7 @@ describe('validateChannelUrl()', () => {
 });
 
 describe('_parseVTT()', () => {
-  const fetcher = new YouTubeFetcher(logger);
+  const fetcher = new YouTubeFetcher({ logger });
 
   it('應正確解析 VTT 字幕為純文字', () => {
     const vtt = [
@@ -105,7 +105,7 @@ describe('PermanentError', () => {
   });
 
   it('fetchTranscript() 無字幕時應拋出 PermanentError', async () => {
-    const fetcher = new YouTubeFetcher(logger);
+    const fetcher = new YouTubeFetcher({ logger });
     // Mock _runYtDlp to always reject (no subtitles)
     fetcher._runYtDlp = async () => { throw new Error('no sub'); };
     await assert.rejects(
@@ -116,7 +116,7 @@ describe('PermanentError', () => {
 });
 
 describe('YouTubeFetcher (需要網路)', () => {
-  const fetcher = new YouTubeFetcher(logger);
+  const fetcher = new YouTubeFetcher({ logger });
   const CHANNEL_URL = 'https://www.youtube.com/@NaNaShuoMeiGu';
 
   it('fetchRecentVideos() 應能取得頻道影片列表', async () => {

@@ -62,6 +62,15 @@
 - LLM Queue 單執行緒 + Sliding window rate limiting，支援 `requestsPerMinute` 設定
 - LLM 呼叫獨立日誌（`logs/llm.log`）：記錄每次呼叫的 provider、model、token 數、耗時
 
+### Phase 6 — 安裝程式與自動更新（規劃中）
+
+> 詳見 [doc/Phase6_安裝程式與自動更新_設計文件.md](doc/Phase6_安裝程式與自動更新_設計文件.md)
+
+- 建構 Mac / Windows installer，發佈至 GitHub Releases
+- Windows：安裝後建立桌面捷徑，點擊自動開啟設定畫面
+- Mac：首次執行時自動開啟設定畫面
+- 內建自動更新機制：啟動時檢查 GitHub Releases 是否有新版本，有則提示更新流程
+
 ## 環境需求
 
 - Node.js >= 20
@@ -128,6 +137,7 @@ cp config/settings.json.example config/settings.json
 - **app.dataPath**: 資料儲存路徑（預設 `./data`）
 - **app.apiPort**: API server 埠號（預設 `3579`）
 - **download**: 下載佇列參數（並發數、重試次數等）
+- **llm**: 產生摘要佇列參數（重試次數、每分鐘下載次數限制等）
 
 設定檔欄位詳見 `config/settings.json.example`。
 
@@ -313,6 +323,72 @@ node --test tests/test-config.js
 
 整合測試部分項目需要實際網路連線（例如呼叫 YouTube），建議在穩定網路環境下執行。
 
+## 發佈安裝程式
+
+### 更版流程
+
+**版本號的唯一來源是 `package.json` 的 `"version"` 欄位。**
+
+```bash
+npm version patch   # 0.2.0 → 0.2.1
+npm version minor   # 0.2.0 → 0.3.0
+npm version major   # 0.2.0 → 1.0.0
+```
+
+`npm version` 會自動修改 `package.json`、建立 git commit 與 tag。版本號會自動反映在 Settings 頁面右上角及 installer 檔名。
+
+---
+
+### Mac Build（在 macOS 上執行）
+
+```bash
+# 1. 下載 yt-dlp binary（首次或需要更新時）
+npm run download:yt-dlp mac
+
+# 2. Build installer
+npm run build:mac
+
+# 輸出：dist/XQDigest-x.y.z.dmg
+```
+
+> **未簽名 app**：首次開啟需手動允許（系統設定 → 隱私權與安全性）；
+> 或執行 `xattr -dr com.apple.quarantine /Applications/XQDigest.app`。
+
+---
+
+### Windows Build（必須在 Windows 上執行）
+
+```bash
+# 1. 下載 yt-dlp binary（首次或需要更新時）
+npm run download:yt-dlp win
+
+# 2. Build installer
+npm run build:win
+
+# 輸出：dist\XQDigest Setup x.y.z.exe
+```
+
+> **未簽名 exe**：可能觸發 SmartScreen 警告，點擊「更多資訊 → 仍要執行」即可。
+
+---
+
+### 發佈到 GitHub Releases
+
+```bash
+# 1. 確認測試全過
+npm test
+
+# 2. 更版（會自動建立 git tag）
+npm version minor
+
+# 3. 推送 tag
+git push && git push --tags
+
+# 4. 在 GitHub 建立 Release（對應 tag），上傳 dist/ 中的安裝檔
+#    Mac：dist/XQDigest-x.y.z.dmg
+#    Win：dist/XQDigest Setup x.y.z.exe
+```
+
 ## 專案結構
 
 ```
@@ -361,4 +437,5 @@ renderer/
 - `doc/Phase3_ContentFeed_設計文件.md` — Phase 3 Feed 閱讀介面、Content API、主題系統設計
 - `doc/Phase4_Settings_設計文件.md` — Phase 4 完整的設定UI，整合LLM的設定以及DataSource的管理
 - `doc/Phase5_下載與摘要分離_設計文件.md` — Phase 5 雙 Pipeline 架構、LLMQueue、LLMLogger、狀態流程設計
+- `doc/Phase6_安裝程式與自動更新_設計文件.md` — Phase 6 Installer 打包、路徑設計、版號顯示、首次執行、自動更新
 - `CLAUDE.md` — AI 開發規範與架構導覽

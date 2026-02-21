@@ -45,3 +45,7 @@ export const settings = {
   updateLLM: (data)   => _request('PUT',  '/api/settings/llm', data),
   testLLM:   (params) => _request('POST', '/api/settings/llm/test', params),
 };
+
+export const app = {
+  getVersion: () => _request('GET', '/api/version'),
+};

@@ -88,6 +88,9 @@ class ConfigManager extends EventEmitter {
   }
 
   getDataPath() {
+    if (process.env.XQDIGEST_DATA_PATH) {
+      return process.env.XQDIGEST_DATA_PATH;
+    }
     const dataPath = this.get().app.dataPath || './data';
     return path.resolve(path.dirname(this.configPath), '..', dataPath);
   }

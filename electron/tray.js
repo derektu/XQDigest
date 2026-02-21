@@ -2,8 +2,9 @@ const path = require('path');
 const { app, Tray, Menu, nativeImage, shell } = require('electron');
 
 class TrayManager {
-  constructor(engine) {
+  constructor(engine, options = {}) {
     this._engine = engine;
+    this._onCheckUpdate = options.onCheckUpdate || null;
     this._tray = null;
     this._state = engine.getState();
     this._port = null;
@@ -39,7 +40,7 @@ class TrayManager {
     const hasPort = this._port !== null;
 
     const menu = Menu.buildFromTemplate([
-      { label: 'XQDigest', enabled: false },
+      { label: `XQDigest v${app.getVersion()}`, enabled: false },
       { type: 'separator' },
       {
         label: 'Feeds',
@@ -73,6 +74,10 @@ class TrayManager {
       { type: 'separator' },
       { label: `Status: ${this._state}`, enabled: false },
       { type: 'separator' },
+      ...(this._onCheckUpdate ? [
+        { label: '檢查更新', click: () => this._onCheckUpdate() },
+        { type: 'separator' },
+      ] : []),
       {
         label: 'Quit',
         click: () => app.quit(),

@@ -1,0 +1,52 @@
+appId: com.xqdigest.app
+productName: XQDigest
+copyright: "Copyright © 2025 XQDigest"
+
+directories:
+  output: dist
+  buildResources: build
+
+npmRebuild: false
+
+files:
+  - electron/**
+  - src/**
+  - dist-renderer/**
+  - config/settings.json.example
+  - package.json
+  - "!tests/**"
+  - "!doc/**"
+  - "!data/**"
+  - "!logs/**"
+  - "!renderer/src/**"
+  - "!scripts/**"
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+  icon: build/source-icon.png
+  category: public.app-category.finance
+  identity: null
+  extraResources:
+    - from: build/bin/mac/yt-dlp
+      to: bin/yt-dlp
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/source-icon.png
+  extraResources:
+    - from: build/bin/win/yt-dlp.exe
+      to: bin/yt-dlp.exe
+
+nsis:
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: XQDigest
+
+publish:
+  provider: github
+  owner: derektu
+  repo: XQDigest

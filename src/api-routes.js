@@ -49,6 +49,14 @@ function createRoutes(engine) {
   }
 
   return [
+    {
+      method: 'GET',
+      pattern: '/api/version',
+      handler: () => {
+        const { version } = require('../package.json');
+        return { data: { version } };
+      },
+    },
     // Literal routes BEFORE parametric routes
     {
       method: 'GET',

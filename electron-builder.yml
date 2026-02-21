@@ -25,6 +25,8 @@ mac:
   target:
     - target: dmg
       arch: [arm64]
+    - target: zip
+      arch: [arm64]
   icon: build/source-icon.png
   category: public.app-category.finance
   identity: null

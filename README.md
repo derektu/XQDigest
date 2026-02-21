@@ -347,9 +347,16 @@ npm run download:yt-dlp mac
 
 # 2. Build installer
 npm run build:mac
-
-# 輸出：dist/XQDigest-x.y.z.dmg
 ```
+
+產出檔案（`dist/`）：
+
+| 檔案 | 用途 |
+|------|------|
+| `XQDigest-x.y.z-arm64.dmg` | 初次安裝用 |
+| `XQDigest-x.y.z-arm64-mac.zip` | 自動更新下載用 |
+| `XQDigest-x.y.z-arm64-mac.zip.blockmap` | 差異更新用 |
+| `latest-mac.yml` | 版本 metadata（auto-updater 必要） |
 
 > **未簽名 app**：首次開啟需手動允許（系統設定 → 隱私權與安全性）；
 > 或執行 `xattr -dr com.apple.quarantine /Applications/XQDigest.app`。
@@ -364,9 +371,15 @@ npm run download:yt-dlp win
 
 # 2. Build installer
 npm run build:win
-
-# 輸出：dist\XQDigest Setup x.y.z.exe
 ```
+
+產出檔案（`dist\`）：
+
+| 檔案 | 用途 |
+|------|------|
+| `XQDigest Setup x.y.z.exe` | 初次安裝用 |
+| `XQDigest Setup x.y.z.exe.blockmap` | 差異更新用 |
+| `latest.yml` | 版本 metadata（auto-updater 必要） |
 
 > **未簽名 exe**：可能觸發 SmartScreen 警告，點擊「更多資訊 → 仍要執行」即可。
 
@@ -378,16 +391,22 @@ npm run build:win
 # 1. 確認測試全過
 npm test
 
-# 2. 更版（會自動建立 git tag）
+# 2. 更版（會自動建立 git commit 與 tag）
 npm version minor
 
-# 3. 推送 tag
+# 3. 推送（注意：VSCode Sync Changes 不會推 tag，需用 terminal）
 git push && git push --tags
 
-# 4. 在 GitHub 建立 Release（對應 tag），上傳 dist/ 中的安裝檔
-#    Mac：dist/XQDigest-x.y.z.dmg
-#    Win：dist/XQDigest Setup x.y.z.exe
+# 4. Build installer（Mac / Windows 分別在對應平台執行）
+npm run build:mac   # macOS
+npm run build:win   # Windows
 ```
+
+在 GitHub 建立新 Release（選對應 tag），上傳 `dist/` 下的所有產出檔案：
+- **Mac**：`.dmg`、`-mac.zip`、`-mac.zip.blockmap`、`latest-mac.yml`
+- **Win**：`.exe`、`.exe.blockmap`、`latest.yml`
+
+> **注意**：`latest-mac.yml` / `latest.yml` 是 auto-updater 必要的 metadata 檔案，缺少會導致「找不到更新」錯誤。
 
 ## 專案結構
 

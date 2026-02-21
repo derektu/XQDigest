@@ -13,4 +13,9 @@ module.exports = {
     retryDelay: 1000,      // 重試間隔（ms）
     timeoutMs: 30000,      // 下載 timeout（ms）
   },
+  llm: {
+    retryAttempts: 3,      // LLM 呼叫重試次數
+    retryDelay: 5000,      // LLM 重試間隔（ms）
+    requestsPerMinute: 0,  // LLM rate limit（0 = 無限制）
+  },
 };

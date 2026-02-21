@@ -2,10 +2,11 @@ const Logger = require('./logger');
 const { PermanentError } = require('./fetchers/youtube');
 
 class Scheduler {
-  constructor({ configManager, dataSourceManager, queue, youtubeFetcher, rssFetcher, llmService, storage, db, logger }) {
+  constructor({ configManager, dataSourceManager, queue, llmQueue, youtubeFetcher, rssFetcher, llmService, storage, db, logger }) {
     this.configManager = configManager;
     this.dataSourceManager = dataSourceManager || null;
     this.queue = queue;
+    this.llmQueue = llmQueue || null;
     this.youtubeFetcher = youtubeFetcher;
     this.rssFetcher = rssFetcher;
     this.llmService = llmService;
@@ -19,9 +20,12 @@ class Scheduler {
   }
 
   _setupQueueListeners() {
+    // Download queue listeners
     this.queue.on('taskCompleted', (task) => {
-      this._pendingItems.delete(task.id);
-      this.logger.debug(`[Queue] Completed: "${task.name}" (${task.id})`);
+      // NOTE: Don't remove from _pendingItems here.
+      // Either _fetchContent() already removed it (no LLM pipeline),
+      // or the LLM queue listeners will remove it when summarization is done.
+      this.logger.debug(`[DownloadQueue] Completed: "${task.name}" (${task.id})`);
     });
 
     this.queue.on('taskRetry', (task, retryCount, delay) => {
@@ -29,8 +33,8 @@ class Scheduler {
     });
 
     this.queue.on('taskFailed', (task, error) => {
+      this._pendingItems.delete(task.id);
       if (error instanceof PermanentError) {
-        this._pendingItems.delete(task.id);
         if (task.meta) {
           const { source, item } = task.meta;
           this.db.insertFailedItem({
@@ -44,10 +48,26 @@ class Scheduler {
         }
         this.logger.error(`Permanent failure: "${task.name}" — ${error.message}`);
       } else {
-        this._pendingItems.delete(task.id);
         this.logger.error(`Failed: "${task.name}" — ${error.message}`);
       }
     });
+
+    // LLM queue listeners (if provided)
+    if (this.llmQueue) {
+      this.llmQueue.on('taskCompleted', (task) => {
+        this._pendingItems.delete(task.id);
+        this.logger.debug(`[LLMQueue] Completed: "${task.name}" (${task.id})`);
+      });
+
+      this.llmQueue.on('taskRetry', (task, retryCount, delay) => {
+        this.logger.warn(`[LLMQueue] Retry #${retryCount} for "${task.name}" in ${delay}ms`);
+      });
+
+      this.llmQueue.on('taskFailed', (task, error) => {
+        this._pendingItems.delete(task.id);
+        this.logger.error(`[LLMQueue] Failed: "${task.name}" — ${error.message}`);
+      });
+    }
   }
 
   /**
@@ -142,6 +162,25 @@ class Scheduler {
     this.llmService = llmService;
   }
 
+  /**
+   * Enqueue a pending summary for an item that is already in DB with status='fetched'.
+   * Called by AppEngine on restart to resume unfinished LLM summaries.
+   */
+  enqueuePendingSummary(source, item) {
+    // Skip if already tracked in this session
+    if (this._pendingItems.has(item.itemId)) return;
+    // Skip if no LLM pipeline available
+    if (!this.llmQueue || !this.llmService) return;
+
+    this._pendingItems.add(item.itemId);
+    this.llmQueue.addTask({
+      id: item.itemId,
+      name: item.title,
+      meta: { source, item },
+      execute: () => this._summarizeItem(source, item),
+    });
+  }
+
   _setupJobs() {
     const sources = this._getEnabledSources();
     this.logger.info(`Setting up jobs for ${sources.length} enabled source(s)`);
@@ -222,7 +261,7 @@ class Scheduler {
           id: item.itemId,
           name: item.title,
           meta: { source, item },
-          execute: () => this._processItem(source, item),
+          execute: () => this._fetchContent(source, item),
         });
       }
 
@@ -264,7 +303,11 @@ class Scheduler {
     }));
   }
 
-  async _processItem(source, item) {
+  /**
+   * Stage 1: Download raw content and save to DB with status='fetched'.
+   * Then enqueue for LLM summarization if available.
+   */
+  async _fetchContent(source, item) {
     const tag = `[${source.name}]`;
     this.logger.info(`${tag} Processing: "${item.title}" (${item.itemId})`);
 
@@ -275,24 +318,59 @@ class Scheduler {
         this.logger.info(`${tag} Transcript downloaded: "${item.title}"`);
       }
 
-      let summaryText = null;
-      if (this.llmService) {
-        const sourcePrompt = this._getSourcePrompt(source.id);
-        summaryText = await this.llmService.summarize(item.content, item.title, sourcePrompt);
-        this.logger.info(`${tag} Summary generated: "${item.title}"`);
-      } else {
-        this.logger.warn(`${tag} No LLM service configured, skipping summary`);
-      }
-
       await this.storage.saveContent(item);
-      if (summaryText) {
-        await this.storage.updateSummary(item, summaryText);
+      this.logger.info(`${tag} Content saved: "${item.title}"`);
+
+      if (this.llmQueue && this.llmService) {
+        // Hand off to LLM queue; LLM queue listeners will remove from _pendingItems when done
+        this.llmQueue.addTask({
+          id: item.itemId,
+          name: item.title,
+          meta: { source, item },
+          execute: () => this._summarizeItem(source, item),
+        });
+      } else {
+        // No LLM pipeline: item stays at status='fetched', processing is complete for this session
+        this._pendingItems.delete(item.itemId);
+        this.logger.info(`${tag} Saved: "${item.title}" (no LLM configured)`);
       }
 
-      this.logger.info(`${tag} Saved: "${item.title}"`);
       return item;
     } catch (err) {
-      this.logger.error(`${tag} Error processing "${item.title}" (${item.itemId}): ${err.message}`);
+      this.logger.error(`${tag} Error fetching content for "${item.title}" (${item.itemId}): ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Stage 2: Run LLM summarization and update DB with status='summarized'.
+   */
+  async _summarizeItem(source, item) {
+    const tag = `[${source.name}]`;
+    this.logger.info(`${tag} Summarizing: "${item.title}" (${item.itemId})`);
+
+    try {
+      // Get raw content from item (in-memory) or from DB (resume path)
+      let rawContent = item.rawContent || item.content;
+      if (!rawContent) {
+        const dbRow = this.db.getContentItemByItemId(item.itemId);
+        rawContent = dbRow?.raw_content;
+      }
+
+      if (!rawContent) {
+        throw new Error(`No raw content found for item: ${item.itemId}`);
+      }
+
+      const sourcePrompt = this._getSourcePrompt(source.id);
+      const summaryText = await this.llmService.summarize(rawContent, item.title, sourcePrompt, item.itemId);
+      this.logger.info(`${tag} Summary generated: "${item.title}"`);
+
+      await this.storage.updateSummary(item, summaryText);
+      this.logger.info(`${tag} Summary saved: "${item.title}"`);
+
+      return item;
+    } catch (err) {
+      this.logger.error(`${tag} Error summarizing "${item.title}" (${item.itemId}): ${err.message}`);
       throw err;
     }
   }

@@ -25,7 +25,7 @@ class BaseLLMProvider {
    * @param {Array<{role: string, content: string}>} messages - Chat messages
    * @param {Object} [options]
    * @param {string} [options.responseFormat] - 'json' | 'text' (default: 'text')
-   * @returns {Promise<string>} Completion text
+   * @returns {Promise<{text: string, usage: {promptTokens: number, completionTokens: number} | null}>}
    */
   async chatCompletion(messages, options = {}) {
     throw new Error('chatCompletion() must be implemented by subclass');

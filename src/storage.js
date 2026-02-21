@@ -39,9 +39,10 @@ class Storage {
       published_date: item.publishedDate || null,
       fetched_date: new Date().toISOString(),
       markdown_file_path: relativePath,
+      raw_content: item.content || null,
       summary: null,
       tags: null,
-      status: 'new',
+      status: 'fetched',
     });
 
     return relativePath;

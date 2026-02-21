@@ -28,9 +28,9 @@ class DB {
   insertContentItem(item) {
     const stmt = this.db.prepare(`
       INSERT OR IGNORE INTO content_items
-        (source_type, source_id, item_id, title, url, author, published_date, fetched_date, markdown_file_path, summary, tags, status)
+        (source_type, source_id, item_id, title, url, author, published_date, fetched_date, markdown_file_path, raw_content, summary, tags, status)
       VALUES
-        (@source_type, @source_id, @item_id, @title, @url, @author, @published_date, @fetched_date, @markdown_file_path, @summary, @tags, @status)
+        (@source_type, @source_id, @item_id, @title, @url, @author, @published_date, @fetched_date, @markdown_file_path, @raw_content, @summary, @tags, @status)
     `);
     return stmt.run(item);
   }
@@ -38,7 +38,7 @@ class DB {
   updateContentSummary(itemId, summary) {
     const stmt = this.db.prepare(`
       UPDATE content_items
-      SET summary = ?, status = 'processed', updated_at = CURRENT_TIMESTAMP
+      SET summary = ?, status = 'summarized', updated_at = CURRENT_TIMESTAMP
       WHERE item_id = ?
     `);
     return stmt.run(summary, itemId);
@@ -48,7 +48,7 @@ class DB {
     return this.db.prepare('SELECT * FROM content_items WHERE item_id = ?').get(itemId);
   }
 
-  getContentItems({ status, sourceType, sourceId, isRead, limit = 50, offset = 0 } = {}) {
+  getContentItems({ statuses, status, sourceType, sourceId, isRead, limit = 50, offset = 0 } = {}) {
     let sql = `
       SELECT ci.*, ds.source_name
       FROM content_items ci
@@ -56,7 +56,11 @@ class DB {
       WHERE 1=1
     `;
     const params = {};
-    if (status) {
+    if (statuses && Array.isArray(statuses) && statuses.length > 0) {
+      const placeholders = statuses.map((_, i) => `@s${i}`).join(', ');
+      sql += ` AND ci.status IN (${placeholders})`;
+      statuses.forEach((s, i) => { params[`s${i}`] = s; });
+    } else if (status) {
       sql += ' AND ci.status = @status';
       params.status = status;
     }
@@ -78,6 +82,10 @@ class DB {
     return this.db.prepare(sql).all(params);
   }
 
+  getItemsByStatus(status) {
+    return this.db.prepare('SELECT * FROM content_items WHERE status = ?').all(status);
+  }
+
   markContentRead(id, isRead) {
     return this.db.prepare(
       'UPDATE content_items SET is_read = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
@@ -86,10 +94,10 @@ class DB {
 
   getUnreadCounts() {
     const all = this.db.prepare(
-      "SELECT COUNT(*) as count FROM content_items WHERE is_read = 0 AND status = 'processed'"
+      "SELECT COUNT(*) as count FROM content_items WHERE is_read = 0 AND status IN ('processed', 'summarized')"
     ).get();
     const bySourceRows = this.db.prepare(
-      "SELECT source_id, COUNT(*) as count FROM content_items WHERE is_read = 0 AND status = 'processed' GROUP BY source_id"
+      "SELECT source_id, COUNT(*) as count FROM content_items WHERE is_read = 0 AND status IN ('processed', 'summarized') GROUP BY source_id"
     ).all();
     const bySource = {};
     for (const row of bySourceRows) {
@@ -183,7 +191,7 @@ class DB {
 
   getDataSourceStats(id) {
     const total = this.db.prepare('SELECT COUNT(*) as count FROM content_items WHERE source_id = ?').get(id);
-    const processed = this.db.prepare("SELECT COUNT(*) as count FROM content_items WHERE source_id = ? AND status = 'processed'").get(id);
+    const processed = this.db.prepare("SELECT COUNT(*) as count FROM content_items WHERE source_id = ? AND status IN ('processed', 'summarized')").get(id);
     const failed = this.db.prepare('SELECT COUNT(*) as count FROM failed_items WHERE source_id = ?').get(id);
     const ds = this.getDataSourceById(id);
     return {

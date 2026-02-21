@@ -47,7 +47,11 @@ class OpenAIProvider extends BaseLLMProvider {
     if (!content) {
       throw new Error('LLM returned empty response (content filtered or null)');
     }
-    return content;
+    const usage = response.usage ? {
+      promptTokens: response.usage.prompt_tokens,
+      completionTokens: response.usage.completion_tokens,
+    } : null;
+    return { text: content, usage };
   }
 }
 

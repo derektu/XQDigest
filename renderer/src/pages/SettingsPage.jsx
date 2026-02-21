@@ -133,6 +133,7 @@ function makeInitialForm(settings) {
     model: settings?.model || '',
     maxTokens: settings?.maxTokens ?? 4096,
     temperature: settings?.temperature ?? 0.7,
+    requestsPerMinute: settings?.requestsPerMinute ?? 0,
     summarizationPrompt: settings?.summarizationPrompt || '',
   };
 }
@@ -186,6 +187,7 @@ function LLMSettingsContent() {
         model: form.model,
         maxTokens: parseInt(form.maxTokens) || 4096,
         temperature: parseFloat(form.temperature) || 0.7,
+        requestsPerMinute: parseInt(form.requestsPerMinute) || 0,
         summarizationPrompt: form.summarizationPrompt,
       });
       setSaveOk(true);
@@ -318,6 +320,17 @@ function LLMSettingsContent() {
                   min={0}
                   max={1}
                   step={0.1}
+                />
+              </div>
+              <div style={{ ...fieldGroup, flex: 1 }}>
+                <label style={labelStyle}>Rate Limit (req/min)</label>
+                <input
+                  style={inputStyle}
+                  type="number"
+                  value={form.requestsPerMinute}
+                  onChange={set('requestsPerMinute')}
+                  min={0}
+                  placeholder="0 = 無限制"
                 />
               </div>
             </div>

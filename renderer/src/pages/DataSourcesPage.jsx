@@ -21,7 +21,7 @@ const inputSearch = {
   border: '1px solid var(--color-border)',
   background: 'var(--color-bg-surface)',
   color: 'var(--color-text-primary)',
-  fontSize: 13, width: 200,
+  fontSize: 'var(--font-size-base)', width: 200,
 };
 
 /**

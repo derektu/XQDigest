@@ -1,10 +1,12 @@
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('events');
 const fs = require('fs');
 const path = require('path');
 const DB = require('../src/database/db');
 const Storage = require('../src/storage');
 const DownloadQueue = require('../src/queue');
+const LLMQueue = require('../src/llm-queue');
 const Scheduler = require('../src/scheduler');
 const { PermanentError } = require('../src/fetchers/youtube');
 
@@ -46,6 +48,49 @@ function mockRSS(items = []) {
   return { fetchItems: async () => items };
 }
 
+/**
+ * LLMQueue mock that executes tasks immediately in a microtask.
+ * Supports event listeners via EventEmitter.
+ */
+function mockLLMQueue(maxRetries = 0) {
+  const q = new EventEmitter();
+  q.stop = () => {};
+  q.drain = async () => {};
+  q.updateRateLimit = () => {};
+  q._stopped = false;
+  q.addTask = (task) => {
+    task.retryCount = task.retryCount || 0;
+    task.maxRetries = task.maxRetries ?? maxRetries;
+    process.nextTick(async () => {
+      q.emit('taskStarted', task, {});
+      try {
+        const result = await task.execute();
+        task.result = result;
+        q.emit('taskCompleted', task, {});
+      } catch (err) {
+        if (task.retryCount < task.maxRetries) {
+          task.retryCount++;
+          q.emit('taskRetry', task, task.retryCount, 0, {});
+          process.nextTick(async () => {
+            try {
+              const result = await task.execute();
+              task.result = result;
+              q.emit('taskCompleted', task, {});
+            } catch (err2) {
+              task.error = err2;
+              q.emit('taskFailed', task, err2, {});
+            }
+          });
+        } else {
+          task.error = err;
+          q.emit('taskFailed', task, err, {});
+        }
+      }
+    });
+  };
+  return q;
+}
+
 describe('Scheduler', () => {
   let db;
 
@@ -63,7 +108,7 @@ describe('Scheduler', () => {
   it('start() / stop() 應正確控制排程狀態', () => {
     const scheduler = new Scheduler({
       configManager: mockConfigManager(), dataSourceManager: mockDataSourceManager(),
-      queue: new DownloadQueue(), youtubeFetcher: mockYT(), rssFetcher: mockRSS(),
+      queue: new DownloadQueue(), llmQueue: mockLLMQueue(), youtubeFetcher: mockYT(), rssFetcher: mockRSS(),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
     });
     scheduler.start();
@@ -72,7 +117,7 @@ describe('Scheduler', () => {
     assert.equal(scheduler.running, false);
   });
 
-  it('checkNow() 新 RSS 項目應加入佇列並儲存', async () => {
+  it('checkNow() 新 RSS 項目應加入佇列並儲存（status=fetched）', async () => {
     const queue = new DownloadQueue({ concurrentLimit: 3 });
     const completed = [];
     queue.on('taskCompleted', (task) => completed.push(task.id));
@@ -87,7 +132,7 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'Test', url: 'http://x/feed', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
+      queue, llmQueue: mockLLMQueue(), youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
     });
 
@@ -97,6 +142,8 @@ describe('Scheduler', () => {
     assert.equal(completed.length, 2);
     assert.ok(db.itemExists('rss-1'));
     assert.ok(db.itemExists('rss-2'));
+    // Items saved with status='fetched' (no LLM)
+    assert.equal(db.getContentItemByItemId('rss-1').status, 'fetched');
   });
 
   it('已存在的項目不應重複加入佇列', async () => {
@@ -111,7 +158,7 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
+      queue, llmQueue: mockLLMQueue(), youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
     });
 
@@ -128,7 +175,6 @@ describe('Scheduler', () => {
     const queue = new DownloadQueue({ concurrentLimit: 1 });
     let processCount = 0;
 
-    // Slow execute: item stays in queue for a while before completing
     const rssItems = [{ itemId: 'slow-1', title: 'Slow', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }];
 
     const slowStorage = {
@@ -145,7 +191,7 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
+      queue, llmQueue: mockLLMQueue(), youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
       llmService: null, storage: slowStorage, db, logger,
     });
 
@@ -174,7 +220,7 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'youtube', name: 'YT', url: 'https://youtube.com/@test', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: ytMock, rssFetcher: mockRSS(),
+      queue, llmQueue: mockLLMQueue(), youtubeFetcher: ytMock, rssFetcher: mockRSS(),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
     });
 
@@ -187,10 +233,13 @@ describe('Scheduler', () => {
     const item = db.getContentItemByItemId('yt-001');
     const md = fs.readFileSync(path.join(TMP_DIR, 'content', item.markdown_file_path), 'utf8');
     assert.ok(md.includes('Transcript for yt-001'));
+    // raw_content should also be saved
+    assert.ok(item.raw_content.includes('Transcript for yt-001'));
   });
 
-  it('有 LLM API Key 時應呼叫摘要並更新狀態為 processed', async () => {
+  it('有 LLM 服務時應呼叫摘要並更新狀態為 summarized', async () => {
     const queue = new DownloadQueue({ concurrentLimit: 3 });
+    const llmQueue = mockLLMQueue();
     let summarizeCalled = false;
     const llmMock = {
       summarize: async () => { summarizeCalled = true; return 'Mock summary text'; },
@@ -201,7 +250,8 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: mockYT(),
+      queue, llmQueue,
+      youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'llm-1', title: 'LLM Test', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: llmMock, storage: new Storage(db, TMP_DIR), db, logger,
     });
@@ -211,12 +261,13 @@ describe('Scheduler', () => {
 
     assert.equal(summarizeCalled, true);
     const item = db.getContentItemByItemId('llm-1');
-    assert.equal(item.status, 'processed');
+    assert.equal(item.status, 'summarized');
     assert.equal(item.summary, 'Mock summary text');
   });
 
   it('有自訂 prompt 的來源應將 prompt 傳入 LLM summarize()', async () => {
     const queue = new DownloadQueue({ concurrentLimit: 3 });
+    const llmQueue = mockLLMQueue();
     let capturedPrompt;
     const llmMock = {
       summarize: async (content, title, customPrompt) => { capturedPrompt = customPrompt; return 'Mock summary'; },
@@ -231,7 +282,8 @@ describe('Scheduler', () => {
         ],
         getSourcePrompt: (id) => id === 'src-custom' ? customPromptText : null,
       },
-      queue, youtubeFetcher: mockYT(),
+      queue, llmQueue,
+      youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'prompt-1', title: 'Prompt Test', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: llmMock, storage: new Storage(db, TMP_DIR), db, logger,
     });
@@ -253,7 +305,8 @@ describe('Scheduler', () => {
         { id: 'src-a', type: 'rss', name: 'A', url: 'http://a', checkInterval: 9999, enabled: true },
         { id: 'src-b', type: 'rss', name: 'B', url: 'http://b', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: mockYT(),
+      queue, llmQueue: mockLLMQueue(),
+      youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'x', title: 'X', content: 'C', publishedDate: '2026-02-11', url: 'http://x', author: 'A' }]),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
     });
@@ -285,7 +338,7 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true, lookbackDays: 3 },
       ]),
-      queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
+      queue, llmQueue: mockLLMQueue(), youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
     });
 
@@ -312,7 +365,7 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true, maxItems: 3 },
       ]),
-      queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
+      queue, llmQueue: mockLLMQueue(), youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
     });
 
@@ -343,7 +396,7 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true, lookbackDays: 3, maxItems: 2 },
       ]),
-      queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
+      queue, llmQueue: mockLLMQueue(), youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
     });
 
@@ -370,7 +423,7 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
+      queue, llmQueue: mockLLMQueue(), youtubeFetcher: mockYT(), rssFetcher: mockRSS(rssItems),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
     });
 
@@ -380,10 +433,11 @@ describe('Scheduler', () => {
     assert.equal(completed.length, 5);
   });
 
-  it('摘要失敗時 item 不應存入 DB', async () => {
-    const queue = new DownloadQueue({ concurrentLimit: 3, retryAttempts: 0 });
-    const failed = [];
-    queue.on('taskFailed', (task) => failed.push(task.id));
+  it('LLM 摘要失敗時 item 應保持 status=\'fetched\'', async () => {
+    const queue = new DownloadQueue({ concurrentLimit: 3 });
+    const llmQueue = mockLLMQueue(0); // no retries
+    const llmFailed = [];
+    llmQueue.on('taskFailed', (task) => llmFailed.push(task.id));
 
     const llmMock = {
       summarize: async () => { throw new Error('LLM API error'); },
@@ -394,7 +448,8 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: mockYT(),
+      queue, llmQueue,
+      youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'fail-1', title: 'Fail', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: llmMock, storage: new Storage(db, TMP_DIR), db, logger,
     });
@@ -402,22 +457,23 @@ describe('Scheduler', () => {
     await scheduler.checkNow();
     await sleep(500);
 
-    // Item should NOT be in DB because summarize threw before save
-    assert.ok(!db.itemExists('fail-1'));
-    assert.equal(failed.length, 1);
+    // Item IS saved (download succeeded) but stays at status='fetched'
+    const item = db.getContentItemByItemId('fail-1');
+    assert.ok(item !== null);
+    assert.equal(item.status, 'fetched');
+    assert.equal(llmFailed.length, 1);
   });
 
-  it('暫時性失敗後下次排程應可重試該項目', async () => {
-    const queue = new DownloadQueue({ concurrentLimit: 3, retryAttempts: 0 });
-    const failed = [];
-    queue.on('taskFailed', (task) => failed.push(task.id));
-
+  it('LLM 佇列重試機制：暫時性失敗後應重試並成功', async () => {
+    const queue = new DownloadQueue({ concurrentLimit: 3 });
+    // Use real LLMQueue with retryAttempts: 1 and short delay
+    const llmQueue = new LLMQueue({ retryAttempts: 1, retryDelay: 50, logger });
     let llmCallCount = 0;
     const llmMock = {
       summarize: async () => {
         llmCallCount++;
-        if (llmCallCount === 1) throw new Error('LLM error');
-        return 'summary';
+        if (llmCallCount === 1) throw new Error('LLM transient error');
+        return 'summary text';
       },
     };
 
@@ -426,22 +482,74 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: mockYT(),
+      queue, llmQueue,
+      youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'transient-1', title: 'Transient', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: llmMock, storage: new Storage(db, TMP_DIR), db, logger,
     });
 
-    // First attempt: LLM fails
     await scheduler.checkNow();
-    await sleep(500);
-    assert.ok(!db.itemExists('transient-1'));
-    assert.equal(failed.length, 1);
+    await sleep(600); // download + LLM with 50ms retry delay
 
-    // Second attempt: transient failure released from _pendingItems, should retry and succeed
-    await scheduler.checkNow();
-    await sleep(500);
-    assert.ok(db.itemExists('transient-1'));
     assert.equal(llmCallCount, 2);
+    const item = db.getContentItemByItemId('transient-1');
+    assert.ok(item !== null);
+    assert.equal(item.status, 'summarized');
+    llmQueue.stop();
+  });
+
+  it('enqueuePendingSummary() 應重新加入 LLM 佇列', async () => {
+    const queue = new DownloadQueue({ concurrentLimit: 3 });
+    const llmQueue = mockLLMQueue();
+    let summarizeCalled = false;
+    const llmMock = {
+      summarize: async () => { summarizeCalled = true; return 'resumed summary'; },
+    };
+
+    const scheduler = new Scheduler({
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager([
+        { id: 'src', type: 'rss', name: 'T', url: 'http://x', checkInterval: 9999, enabled: true },
+      ]),
+      queue, llmQueue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(),
+      llmService: llmMock, storage: new Storage(db, TMP_DIR), db, logger,
+    });
+
+    const source = { id: 'src', type: 'rss', name: 'T' };
+    // Simulate a fetched item in DB
+    const storage = new Storage(db, TMP_DIR);
+    await storage.saveContent({
+      itemId: 'resume-1', title: 'Resume Item', content: 'raw content',
+      sourceType: 'rss', sourceId: 'src', publishedDate: '2026-02-11',
+      url: 'http://a', author: 'A',
+    });
+
+    scheduler.enqueuePendingSummary(source, {
+      itemId: 'resume-1', title: 'Resume Item', rawContent: 'raw content',
+    });
+
+    await sleep(200);
+    assert.ok(summarizeCalled);
+    assert.equal(db.getContentItemByItemId('resume-1').status, 'summarized');
+  });
+
+  it('enqueuePendingSummary() 無 llmService 時不應加入佇列', async () => {
+    const queue = new DownloadQueue();
+    const llmQueue = mockLLMQueue();
+    let addTaskCalled = false;
+    const origAddTask = llmQueue.addTask.bind(llmQueue);
+    llmQueue.addTask = (task) => { addTaskCalled = true; origAddTask(task); };
+
+    const scheduler = new Scheduler({
+      configManager: mockConfigManager(),
+      dataSourceManager: mockDataSourceManager(),
+      queue, llmQueue, youtubeFetcher: mockYT(), rssFetcher: mockRSS(),
+      llmService: null, // no LLM
+      storage: new Storage(db, TMP_DIR), db, logger,
+    });
+
+    scheduler.enqueuePendingSummary({ id: 'src' }, { itemId: 'x', title: 'x' });
+    assert.ok(!addTaskCalled);
   });
 
   it('成功處理項目時應記錄完整 log 流程', async () => {
@@ -453,7 +561,8 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'MySource', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: mockYT(),
+      queue, llmQueue: mockLLMQueue(),
+      youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'log-1', title: 'Log Test', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger: capLogger,
     });
@@ -465,20 +574,22 @@ describe('Scheduler', () => {
     assert.ok(logs.info.some(m => m.includes('[MySource]') && m.includes('Fetched') && m.includes('processing')));
     // Should have per-item processing log
     assert.ok(logs.info.some(m => m.includes('[MySource]') && m.includes('Processing:') && m.includes('Log Test')));
-    // Should have saved log
-    assert.ok(logs.info.some(m => m.includes('[MySource]') && m.includes('Saved:') && m.includes('Log Test')));
+    // Should have content saved log
+    assert.ok(logs.info.some(m => m.includes('[MySource]') && m.includes('Content saved:') && m.includes('Log Test')));
   });
 
-  it('處理失敗時應記錄 error log 和 queue failed log', async () => {
+  it('LLM 摘要失敗時應記錄 error log', async () => {
     const { logger: capLogger, logs } = captureLogger();
-    const queue = new DownloadQueue({ concurrentLimit: 3, retryAttempts: 0 });
+    const queue = new DownloadQueue({ concurrentLimit: 3 });
+    const llmQueue = mockLLMQueue(0); // no retries
 
     const scheduler = new Scheduler({
       configManager: mockConfigManager(),
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'FailSource', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: mockYT(),
+      queue, llmQueue,
+      youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'errlog-1', title: 'Error Item', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: { summarize: async () => { throw new Error('API timeout'); } },
       storage: new Storage(db, TMP_DIR), db, logger: capLogger,
@@ -487,10 +598,10 @@ describe('Scheduler', () => {
     await scheduler.checkNow();
     await sleep(500);
 
-    // _processItem should log the error with source tag
-    assert.ok(logs.error.some(m => m.includes('[FailSource]') && m.includes('Error processing') && m.includes('API timeout')));
-    // Queue should log final failure
-    assert.ok(logs.error.some(m => m.includes('Failed:') && m.includes('Error Item')));
+    // _summarizeItem should log the error with source tag
+    assert.ok(logs.error.some(m => m.includes('[FailSource]') && m.includes('Error summarizing') && m.includes('API timeout')));
+    // LLM Queue should log final failure
+    assert.ok(logs.error.some(m => m.includes('[LLMQueue]') && m.includes('Failed:') && m.includes('Error Item')));
   });
 
   it('PermanentError 應寫入 DB 且不再重試', async () => {
@@ -510,7 +621,7 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'yt-src', type: 'youtube', name: 'YT', url: 'https://youtube.com/@test', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: ytMock, rssFetcher: mockRSS(),
+      queue, llmQueue: mockLLMQueue(), youtubeFetcher: ytMock, rssFetcher: mockRSS(),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
     });
 
@@ -543,7 +654,7 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'yt-src2', type: 'youtube', name: 'YT2', url: 'https://youtube.com/@test2', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: ytMock, rssFetcher: mockRSS(),
+      queue, llmQueue: mockLLMQueue(), youtubeFetcher: ytMock, rssFetcher: mockRSS(),
       llmService: null, storage: new Storage(db, TMP_DIR), db, logger,
     });
 
@@ -557,9 +668,11 @@ describe('Scheduler', () => {
     assert.ok(failedItems[0].error_message.includes('no subtitles found'));
   });
 
-  it('處理重試時應記錄 retry warn log', async () => {
+  it('LLM 佇列重試時應記錄 retry warn log 並最終成功', async () => {
     const { logger: capLogger, logs } = captureLogger();
-    const queue = new DownloadQueue({ concurrentLimit: 3, retryAttempts: 1, retryDelay: 50 });
+    const queue = new DownloadQueue({ concurrentLimit: 3 });
+    // Use real LLMQueue for proper retry logging
+    const llmQueue = new LLMQueue({ retryAttempts: 1, retryDelay: 50, logger: capLogger });
 
     let callCount = 0;
     const scheduler = new Scheduler({
@@ -567,19 +680,21 @@ describe('Scheduler', () => {
       dataSourceManager: mockDataSourceManager([
         { id: 'src', type: 'rss', name: 'RetrySource', url: 'http://x', checkInterval: 9999, enabled: true },
       ]),
-      queue, youtubeFetcher: mockYT(),
+      queue, llmQueue,
+      youtubeFetcher: mockYT(),
       rssFetcher: mockRSS([{ itemId: 'retrylog-1', title: 'Retry Item', content: 'C', publishedDate: '2026-02-11', url: 'http://a', author: 'A' }]),
       llmService: { summarize: async () => { callCount++; if (callCount <= 1) throw new Error('Transient'); return 'OK'; } },
       storage: new Storage(db, TMP_DIR), db, logger: capLogger,
     });
 
     await scheduler.checkNow();
-    await sleep(500);
+    await sleep(600);
 
-    // Should have retry warning
-    assert.ok(logs.warn.some(m => m.includes('Retry #1') && m.includes('Retry Item')));
+    // Should have retry warning from LLM queue
+    assert.ok(logs.warn.some(m => m.includes('[LLMQueue] Retry #1') && m.includes('Retry Item')));
     // Should eventually save successfully
-    assert.ok(logs.info.some(m => m.includes('Saved:') && m.includes('Retry Item')));
+    assert.ok(logs.info.some(m => m.includes('[RetrySource]') && m.includes('Summary saved:') && m.includes('Retry Item')));
     assert.ok(db.itemExists('retrylog-1'));
+    llmQueue.stop();
   });
 });

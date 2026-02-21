@@ -121,20 +121,26 @@ describe('LLMService', () => {
     assert.throws(() => new LLMService({ provider: 'invalid', apiKey: 'x', model: 'x' }, logger), /Unknown LLM provider/);
   });
 
-  it('updateConfig() 應重建 provider', () => {
-    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
-    svc.updateConfig({ provider: 'openai', apiKey: 'new', model: 'gpt-4o', summarizationPrompt: '' });
-    assert.equal(svc.provider.model, 'gpt-4o');
+  it('providerName 應正確記錄', () => {
+    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini' }, logger);
+    assert.equal(svc.providerName, 'openai');
   });
 
-  it('chat() 應代理到 provider.chatCompletion()', async () => {
+  it('updateConfig() 應重建 provider 並更新 providerName', () => {
     const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
-    // Mock the provider's chatCompletion
+    svc.updateConfig({ provider: 'gemini', apiKey: 'new', model: 'gemini-pro', summarizationPrompt: '' });
+    assert.equal(svc.provider.model, 'gemini-pro');
+    assert.equal(svc.providerName, 'gemini');
+  });
+
+  it('chat() 應代理到 provider.chatCompletion() 並回傳 text', async () => {
+    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
+    // Mock the provider's chatCompletion to return new format
     let capturedMessages, capturedOptions;
     svc.provider.chatCompletion = async (messages, options) => {
       capturedMessages = messages;
       capturedOptions = options;
-      return 'mock response';
+      return { text: 'mock response', usage: null };
     };
 
     const result = await svc.chat(
@@ -149,8 +155,7 @@ describe('LLMService', () => {
 
   it('summarize() 應解析 JSON 回應並回傳 summary 欄位', async () => {
     const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
-    const mockResponse = '{"summary":"摘要文字"}';
-    svc.provider.chatCompletion = async () => mockResponse;
+    svc.provider.chatCompletion = async () => ({ text: '{"summary":"摘要文字"}', usage: null });
 
     const result = await svc.summarize('content text', 'Test Title');
     assert.equal(result, '摘要文字');
@@ -158,7 +163,7 @@ describe('LLMService', () => {
 
   it('summarize() JSON 解析失敗時應回傳原始文字', async () => {
     const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
-    svc.provider.chatCompletion = async () => 'not json text';
+    svc.provider.chatCompletion = async () => ({ text: 'not json text', usage: null });
 
     const result = await svc.summarize('content', 'Title');
     assert.equal(result, 'not json text');
@@ -170,7 +175,7 @@ describe('LLMService', () => {
     svc.provider.chatCompletion = async (messages, options) => {
       capturedMessages = messages;
       capturedOptions = options;
-      return '{}';
+      return { text: '{}', usage: null };
     };
 
     await svc.summarize('content', 'Title');
@@ -189,7 +194,7 @@ describe('LLMService', () => {
     svc.provider.chatCompletion = async (messages, options) => {
       capturedMessages = messages;
       capturedOptions = options;
-      return '## 摘要標題\n\n這是 markdown 格式的摘要';
+      return { text: '## 摘要標題\n\n這是 markdown 格式的摘要', usage: null };
     };
 
     const result = await svc.summarize('content', 'Title', '自訂 prompt');
@@ -208,7 +213,7 @@ describe('LLMService', () => {
     svc.provider.chatCompletion = async (messages, options) => {
       capturedMessages = messages;
       capturedOptions = options;
-      return '## 摘要結果';
+      return { text: '## 摘要結果', usage: null };
     };
 
     const result = await svc.summarize('content', 'Title');
@@ -230,10 +235,56 @@ describe('LLMService', () => {
 
   it('summarize() 應處理 markdown code fence 包裹的 JSON', async () => {
     const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
-    svc.provider.chatCompletion = async () => '```json\n{"summary":"fenced summary"}\n```';
+    svc.provider.chatCompletion = async () => ({ text: '```json\n{"summary":"fenced summary"}\n```', usage: null });
 
     const result = await svc.summarize('content', 'Title');
     assert.equal(result, 'fenced summary');
+  });
+
+  it('summarize() 應呼叫 llmLogger.log() 記錄成功結果', async () => {
+    const loggedCalls = [];
+    const llmLogger = {
+      log: (params) => loggedCalls.push(params),
+    };
+    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini' }, logger, llmLogger);
+    svc.provider.chatCompletion = async () => ({
+      text: '{"summary":"test"}',
+      usage: { promptTokens: 100, completionTokens: 50 },
+    });
+
+    await svc.summarize('content', 'Title', null, 'item-abc');
+    assert.equal(loggedCalls.length, 1);
+    assert.equal(loggedCalls[0].itemId, 'item-abc');
+    assert.equal(loggedCalls[0].provider, 'openai');
+    assert.equal(loggedCalls[0].model, 'gpt-4o-mini');
+    assert.equal(loggedCalls[0].promptTokens, 100);
+    assert.equal(loggedCalls[0].completionTokens, 50);
+    assert.equal(loggedCalls[0].status, 'success');
+  });
+
+  it('summarize() 失敗時應呼叫 llmLogger.log() 記錄錯誤', async () => {
+    const loggedCalls = [];
+    const llmLogger = {
+      log: (params) => loggedCalls.push(params),
+    };
+    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini' }, logger, llmLogger);
+    svc.provider.chatCompletion = async () => { throw new Error('API error'); };
+
+    await assert.rejects(() => svc.summarize('content', 'Title', null, 'item-xyz'), /API error/);
+    assert.equal(loggedCalls.length, 1);
+    assert.equal(loggedCalls[0].itemId, 'item-xyz');
+    assert.equal(loggedCalls[0].status, 'error');
+    assert.ok(loggedCalls[0].error.includes('API error'));
+  });
+
+  it('summarize() 無 itemId 時不呼叫 llmLogger.log()', async () => {
+    const loggedCalls = [];
+    const llmLogger = { log: (p) => loggedCalls.push(p) };
+    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini' }, logger, llmLogger);
+    svc.provider.chatCompletion = async () => ({ text: '{"summary":"x"}', usage: null });
+
+    await svc.summarize('content', 'Title'); // no itemId
+    assert.equal(loggedCalls.length, 0);
   });
 
   it('_parseJSON() 應正確解析 JSON 字串', () => {

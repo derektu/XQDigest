@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS content_items (
   published_date DATETIME,
   fetched_date DATETIME NOT NULL,
   markdown_file_path TEXT NOT NULL,
+  raw_content TEXT,
   summary TEXT,
   tags TEXT,
   status TEXT DEFAULT 'new',

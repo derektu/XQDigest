@@ -46,7 +46,7 @@ function SortableTh({ column, label, sortBy, sortDir, onSort }) {
         textAlign: 'left', padding: '8px 12px',
         borderBottom: '2px solid var(--color-border)',
         color: isActive ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-        fontSize: 12,
+        fontSize: 'var(--font-size-base)',
         cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
       }}
     >
@@ -61,7 +61,7 @@ function PlainTh({ children }) {
     <th style={{
       textAlign: 'left', padding: '8px 12px',
       borderBottom: '2px solid var(--color-border)',
-      color: 'var(--color-text-secondary)', fontSize: 12,
+      color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)',
     }}>
       {children}
     </th>

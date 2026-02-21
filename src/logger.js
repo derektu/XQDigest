@@ -138,10 +138,15 @@ class Logger {
   }
 
   close() {
-    if (this.stream) {
-      this.stream.end();
-      this.stream = null;
-    }
+    return new Promise((resolve) => {
+      if (this.stream) {
+        this.stream.on('finish', resolve);
+        this.stream.end();
+        this.stream = null;
+      } else {
+        resolve();
+      }
+    });
   }
 
   // --- Singleton API ---
@@ -168,12 +173,13 @@ class Logger {
   }
 
   static close() {
-    Logger._instance?.close();
+    return Logger._instance?.close() ?? Promise.resolve();
   }
 
   static reset() {
-    Logger._instance?.close();
+    const p = Logger._instance?.close() ?? Promise.resolve();
     Logger._instance = null;
+    return p;
   }
 }
 

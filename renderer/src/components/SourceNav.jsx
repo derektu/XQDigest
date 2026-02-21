@@ -57,6 +57,7 @@ const styles = {
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
     flex: 1,
+    minWidth: 0,
   },
   badge: {
     fontSize: 10,

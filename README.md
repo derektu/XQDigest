@@ -52,7 +52,15 @@
 - 未設定 LLM 時顯示橘色警示 banner，導向 Settings 頁面
 - 支援 OpenAI、Gemini、OpenAI-compatible 三種 provider
 
-### Phase 5 — Installer以及auto-update機制（尚未完成）
+### Phase 5 — 下載與摘要分離架構（已完成）
+
+> 詳見 [doc/Phase5_下載與摘要分離_設計文件.md](doc/Phase5_下載與摘要分離_設計文件.md)
+
+- 下載與 LLM 摘要拆分為兩個獨立 Pipeline：DownloadQueue → LLMQueue
+- 狀態流程：`new` → `fetched`（下載完成）→ `summarized`（LLM 完成）；向後相容舊 `processed` 狀態
+- 重啟自動續跑：啟動時掃描 `status='fetched'` 項目，重新加入 LLM queue
+- LLM Queue 單執行緒 + Sliding window rate limiting，支援 `requestsPerMinute` 設定
+- LLM 呼叫獨立日誌（`logs/llm.log`）：記錄每次呼叫的 provider、model、token 數、耗時
 
 ## 環境需求
 
@@ -317,6 +325,8 @@ src/
 ├── config.js             # 設定管理
 ├── logger.js             # Logger (singleton)
 ├── queue.js              # 下載佇列（並發控制 + 重試）
+├── llm-queue.js          # LLM 摘要佇列（單執行緒 + rate limiting）
+├── llm-logger.js         # LLM 呼叫日誌（logs/llm.log）
 ├── scheduler.js          # 排程與處理 pipeline
 ├── storage.js            # Markdown + SQLite 雙寫
 ├── database/
@@ -350,4 +360,5 @@ renderer/
 - `doc/Phase2_DataSources_UI設計文件.md` — Phase 2 HTTP Server、REST API、React UI 設計、DataSource管理UI
 - `doc/Phase3_ContentFeed_設計文件.md` — Phase 3 Feed 閱讀介面、Content API、主題系統設計
 - `doc/Phase4_Settings_設計文件.md` — Phase 4 完整的設定UI，整合LLM的設定以及DataSource的管理
+- `doc/Phase5_下載與摘要分離_設計文件.md` — Phase 5 雙 Pipeline 架構、LLMQueue、LLMLogger、狀態流程設計
 - `CLAUDE.md` — AI 開發規範與架構導覽

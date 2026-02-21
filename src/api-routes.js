@@ -68,7 +68,10 @@ function createRoutes(engine) {
         const sourceId = params.sourceId || undefined;
         const limit = Math.min(parseInt(params.limit) || 20, 100);
         const offset = parseInt(params.offset) || 0;
-        const items = db.getContentItems({ status: 'processed', sourceId, limit, offset });
+        const items = db.getContentItems({
+          statuses: ['fetched', 'summarized', 'processed'],
+          sourceId, limit, offset,
+        });
         return {
           data: items.map(item => ({
             id: item.id,
@@ -78,6 +81,7 @@ function createRoutes(engine) {
             source_id: item.source_id,
             source_name: item.source_name,
             source_type: item.source_type,
+            status: item.status,
             summary: item.summary ? item.summary.slice(0, 300) : null,
             is_read: item.is_read,
             url: item.url,
@@ -275,12 +279,18 @@ function createRoutes(engine) {
       pattern: '/api/settings/llm/test',
       handler: async (_params, body) => {
         const { provider, apiKey, baseUrl } = body || {};
-        if (!provider || !apiKey) {
+        // If apiKey is masked (starts with ****), fall back to the stored actual key
+        let actualApiKey = apiKey;
+        if (apiKey && apiKey.startsWith('****')) {
+          const existing = engine.getLLMSettings ? engine.getLLMSettings() : null;
+          actualApiKey = existing ? existing.apiKey : null;
+        }
+        if (!provider || !actualApiKey) {
           return { data: { valid: false, error: 'provider and apiKey are required' } };
         }
         try {
           if (provider === 'gemini') {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${actualApiKey}`;
             const res = await fetch(url);
             if (!res.ok) {
               const err = await res.json().catch(() => ({}));
@@ -293,7 +303,7 @@ function createRoutes(engine) {
             return { data: { valid: true, models } };
           } else {
             // openai or openai-compatible
-            const options = { apiKey };
+            const options = { apiKey: actualApiKey };
             if (baseUrl) options.baseURL = baseUrl;
             const client = new OpenAI(options);
             let models = [];

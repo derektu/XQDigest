@@ -208,4 +208,27 @@ describe('AppEngine', () => {
     );
     await engine.stop();
   });
+
+  it('stop() 在 LLM queue 有 active task 時應在 6 秒內完成', async () => {
+    writeConfig();
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    await engine.start();
+
+    // Simulate a long-running LLM task by patching drain to never resolve
+    const LLMQueue = require('../src/llm-queue');
+    const origDrain = LLMQueue.prototype.drain;
+    LLMQueue.prototype.drain = function () {
+      return new Promise(() => {}); // never resolves
+    };
+
+    try {
+      const start = Date.now();
+      await engine.stop();
+      const elapsed = Date.now() - start;
+      assert.ok(elapsed < 6000, `stop() should complete within 6s, took ${elapsed}ms`);
+      assert.equal(engine.getState(), 'stopped');
+    } finally {
+      LLMQueue.prototype.drain = origDrain;
+    }
+  });
 });

@@ -8,6 +8,8 @@ const DataSourceManager = require('./datasource-manager');
 const Storage = require('./storage');
 const DownloadQueue = require('./queue');
 const { QueueConfig } = require('./queue');
+const LLMQueue = require('./llm-queue');
+const LLMLogger = require('./llm-logger');
 const YouTubeFetcher = require('./fetchers/youtube');
 const RSSFetcher = require('./fetchers/rss');
 const LLMService = require('./llm');
@@ -35,6 +37,8 @@ class AppEngine extends EventEmitter {
     this._dataSourceManager = null;
     this._storage = null;
     this._queue = null;
+    this._llmQueue = null;
+    this._llmLogger = null;
     this._scheduler = null;
     this._llmService = null;
     this._apiServer = null;
@@ -81,12 +85,14 @@ class AppEngine extends EventEmitter {
     this._db.setAppSetting('llm', data);
     // Re-initialize LLM service
     if (data && data.apiKey) {
-      this._llmService = new LLMService(new LLMServiceConfig(data));
+      this._llmService = new LLMService(new LLMServiceConfig(data), null, this._llmLogger);
       if (this._scheduler) this._scheduler.updateLLMService(this._llmService);
+      if (this._llmQueue) this._llmQueue.updateRateLimit(data.requestsPerMinute || 0);
       if (this._logger) this._logger.info(`LLM re-configured: ${data.provider} / ${data.model}`);
     } else {
       this._llmService = null;
       if (this._scheduler) this._scheduler.updateLLMService(null);
+      if (this._llmQueue) this._llmQueue.updateRateLimit(0);
       if (this._logger) this._logger.info('LLM configuration removed');
     }
   }
@@ -105,9 +111,10 @@ class AppEngine extends EventEmitter {
       const config = this._configManager.get();
 
       // 2. Init logger
+      const logDir = path.resolve(__dirname, '../logs');
       Logger.init(new LoggerConfig({
         level: this._configManager.getLogLevel(),
-        logDir: path.resolve(__dirname, '../logs'),
+        logDir,
       }));
       this._logger = Logger.getLogger('AppEngine');
       this._logger.info('XQDigest starting...');
@@ -150,21 +157,44 @@ class AppEngine extends EventEmitter {
       const youtubeFetcher = new YouTubeFetcher();
       const rssFetcher = new RSSFetcher();
 
-      // 8. Init LLM service (settings from DB)
+      // 8. Init LLM logger
+      this._llmLogger = new LLMLogger(logDir);
+
+      // 9. Init LLM service (settings from DB)
       this._llmService = null;
       const llmSettings = this._db.getAppSetting('llm');
       if (llmSettings && llmSettings.apiKey) {
-        this._llmService = new LLMService(new LLMServiceConfig(llmSettings));
+        this._llmService = new LLMService(new LLMServiceConfig(llmSettings), null, this._llmLogger);
         this._logger.info(`LLM configured: ${llmSettings.provider} / ${llmSettings.model}`);
       } else {
         this._logger.warn('No LLM API key configured, summaries will be skipped');
       }
 
-      // 9. Init scheduler (uses DataSourceManager for sources, ConfigManager for LLM)
+      // 10. Init LLM queue
+      const llmConfig = this._configManager.getLLMConfig();
+      const rpmFromSettings = (llmSettings && llmSettings.requestsPerMinute) || 0;
+      this._llmQueue = new LLMQueue({
+        retryAttempts: llmConfig.retryAttempts,
+        retryDelay: llmConfig.retryDelay,
+        requestsPerMinute: rpmFromSettings || llmConfig.requestsPerMinute,
+      });
+
+      this._llmQueue.on('taskAdded', (task, status) => {
+        this._logger.debug(`LLMQueue: added "${task.name}" (pending: ${status.pending})`);
+      });
+      this._llmQueue.on('taskStarted', (task, status) => {
+        this._logger.debug(`LLMQueue: started "${task.name}"`);
+      });
+      this._llmQueue.on('taskCompleted', (task, status) => {
+        this._logger.debug(`LLMQueue: completed "${task.name}" (pending: ${status.pending}, completed: ${status.completed})`);
+      });
+
+      // 11. Init scheduler (uses DataSourceManager, download queue, and LLM queue)
       this._scheduler = new Scheduler({
         configManager: this._configManager,
         dataSourceManager: this._dataSourceManager,
         queue: this._queue,
+        llmQueue: this._llmQueue,
         youtubeFetcher,
         rssFetcher,
         llmService: this._llmService,
@@ -172,13 +202,16 @@ class AppEngine extends EventEmitter {
         db: this._db,
       });
 
-      // 10. Setup config hot-reload (for LLM, download, app settings)
+      // 12. Setup config hot-reload (for LLM, download, app settings)
       this._setupConfigListeners();
 
-      // 11. Start scheduler
+      // 13. Start scheduler
       this._scheduler.start();
 
-      // 12. Start API server (if apiPort is configured)
+      // 14. Resume any items that were fetched but not yet summarized
+      await this._resumePendingSummaries();
+
+      // 15. Start API server (if apiPort is configured)
       const apiPort = config.app.apiPort !== undefined ? config.app.apiPort : 3579;
       if (apiPort !== null) {
         this._apiServer = new ApiServer(this);
@@ -198,12 +231,31 @@ class AppEngine extends EventEmitter {
     }
   }
 
+  async _resumePendingSummaries() {
+    if (!this._llmService || !this._llmQueue) return;
+    const pendingItems = this._db.getItemsByStatus('fetched');
+    if (pendingItems.length === 0) return;
+    this._logger.info(`Resuming ${pendingItems.length} pending summary item(s)...`);
+    for (const dbRow of pendingItems) {
+      const source = this._dataSourceManager.getById(dbRow.source_id);
+      if (!source) continue;
+      this._scheduler.enqueuePendingSummary(source, {
+        itemId: dbRow.item_id,
+        title: dbRow.title,
+        sourceId: dbRow.source_id,
+        rawContent: dbRow.raw_content,
+      });
+    }
+  }
+
   async _safeCleanup() {
     try { if (this._scheduler) this._scheduler.stop(); } catch (_) {}
     try { if (this._queue) { this._queue.stop(); await this._queue.drain(); } } catch (_) {}
+    try { if (this._llmQueue) { this._llmQueue.stop(); await this._llmQueue.drain(); } } catch (_) {}
     try { if (this._apiServer) await this._apiServer.stop(); } catch (_) {}
     try { if (this._configManager) { this._configManager.stopWatching(); this._configManager.removeAllListeners(); } } catch (_) {}
     try { if (this._db) this._db.close(); } catch (_) {}
+    try { if (this._llmLogger) this._llmLogger.close(); } catch (_) {}
     try { Logger.close(); } catch (_) {}
     this._configManager = null;
     this._logger = null;
@@ -211,6 +263,8 @@ class AppEngine extends EventEmitter {
     this._dataSourceManager = null;
     this._storage = null;
     this._queue = null;
+    this._llmQueue = null;
+    this._llmLogger = null;
     this._scheduler = null;
     this._llmService = null;
     this._apiServer = null;
@@ -250,6 +304,12 @@ class AppEngine extends EventEmitter {
         this._queue.stop();
         await this._queue.drain();
       }
+      if (this._llmQueue) {
+        this._llmQueue.stop();
+        const drain = this._llmQueue.drain();
+        const timeout = new Promise(resolve => setTimeout(resolve, 5000));
+        await Promise.race([drain, timeout]);
+      }
       if (this._apiServer) {
         await this._apiServer.stop();
       }
@@ -259,6 +319,9 @@ class AppEngine extends EventEmitter {
       }
       if (this._db) {
         this._db.close();
+      }
+      if (this._llmLogger) {
+        this._llmLogger.close();
       }
       if (this._logger) {
         this._logger.info('Goodbye!');
@@ -271,6 +334,8 @@ class AppEngine extends EventEmitter {
       this._dataSourceManager = null;
       this._storage = null;
       this._queue = null;
+      this._llmQueue = null;
+      this._llmLogger = null;
       this._scheduler = null;
       this._llmService = null;
       this._apiServer = null;

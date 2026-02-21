@@ -92,9 +92,13 @@ function createMockEngine() {
   }
 
   const db = {
-    getContentItems: ({ status, sourceId, limit = 20, offset = 0 } = {}) => {
+    getContentItems: ({ statuses, status, sourceId, limit = 20, offset = 0 } = {}) => {
       let items = Array.from(contentItems.values());
-      if (status) items = items.filter(i => i.status === status);
+      if (statuses && Array.isArray(statuses)) {
+        items = items.filter(i => statuses.includes(i.status));
+      } else if (status) {
+        items = items.filter(i => i.status === status);
+      }
       if (sourceId) items = items.filter(i => i.source_id === sourceId);
       return items.slice(offset, offset + limit).map(i => ({
         ...i,
@@ -242,10 +246,14 @@ describe('ApiServer', () => {
     assert.ok(typeof res.body.bySource === 'object');
   });
 
-  it('GET /api/content 應回傳內容列表', async () => {
+  it('GET /api/content 應回傳內容列表（含 status 欄位）', async () => {
+    // Add a fetched item to verify multi-status support
+    engine._db._addContentItem({ title: 'Fetched Item', status: 'fetched', summary: null });
     const res = await makeRequest(port, 'GET', '/api/content');
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(res.body));
+    // All returned items should have a status field
+    assert.ok(res.body.every(item => item.status !== undefined), 'each item should have status field');
   });
 
   it('GET /api/content?sourceId=src-1 應依來源篩選', async () => {
@@ -297,6 +305,22 @@ describe('ApiServer', () => {
     // Verify stored apiKey is still the original
     const getRes = await makeRequest(port, 'GET', '/api/settings/llm');
     assert.equal(getRes.body.apiKey, '****1234'); // still masked original key
+  });
+
+  it('POST /api/settings/llm/test 傳送遮罩 apiKey 應 fallback 到 DB 實際 key', async () => {
+    // Ensure LLM settings are stored with a known key
+    await makeRequest(port, 'PUT', '/api/settings/llm', {
+      provider: 'gemini', apiKey: 'fake-key-abcd', model: 'gemini-pro',
+    });
+
+    // Send masked apiKey — should NOT return "provider and apiKey are required"
+    const res = await makeRequest(port, 'POST', '/api/settings/llm/test', {
+      provider: 'gemini', apiKey: '****abcd',
+    });
+    assert.equal(res.status, 200);
+    // The handler must have used the actual key from DB, not the masked string.
+    // Result may be valid:false (invalid fake key), but NOT the "missing apiKey" error.
+    assert.notEqual(res.body.error, 'provider and apiKey are required');
   });
 });
 

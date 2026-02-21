@@ -66,7 +66,7 @@ class DownloadQueue extends EventEmitter {
     const idx = this.active.indexOf(task);
     if (idx !== -1) this.active.splice(idx, 1);
 
-    if (task.retryCount < task.maxRetries) {
+    if (!error.permanent && task.retryCount < task.maxRetries) {
       task.retryCount++;
       const delay = this.retryDelay * Math.pow(2, task.retryCount - 1);
       this.emit('taskRetry', task, task.retryCount, delay, this.getStatus());

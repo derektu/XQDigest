@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 
 const overlayStyle = {
   position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -17,9 +17,14 @@ const dialogStyle = {
 const btnRow = { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 };
 
 export default function ConfirmDialog({ title, message, onConfirm, onCancel, confirmLabel = '確認', danger = false }) {
+  const mouseDownOnOverlay = useRef(false);
   return (
-    <div style={overlayStyle} onClick={onCancel}>
-      <div style={dialogStyle} onClick={(e) => e.stopPropagation()}>
+    <div
+      style={overlayStyle}
+      onMouseDown={(e) => { mouseDownOnOverlay.current = (e.target === e.currentTarget); }}
+      onMouseUp={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) onCancel(); }}
+    >
+      <div style={dialogStyle} onMouseDown={(e) => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 12px', color: 'var(--color-text-primary)' }}>{title}</h3>
         <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: 14 }}>{message}</p>
         <div style={btnRow}>

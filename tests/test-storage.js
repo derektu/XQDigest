@@ -43,7 +43,8 @@ describe('Storage', () => {
 
     const dbItem = db.getContentItemByItemId('abc123');
     assert.equal(dbItem.title, '測試影片標題');
-    assert.equal(dbItem.status, 'new');
+    assert.equal(dbItem.status, 'fetched');
+    assert.equal(dbItem.raw_content, '這是影片字幕內容');
   });
 
   it('Markdown 應含正確的 front matter', async () => {
@@ -96,7 +97,7 @@ describe('Storage', () => {
 
     const dbItem = db.getContentItemByItemId('abc123');
     assert.equal(dbItem.summary, summaryText);
-    assert.equal(dbItem.status, 'processed');
+    assert.equal(dbItem.status, 'summarized');
   });
 
   it('updateSummary() 重複呼叫應覆蓋而非重複追加', async () => {

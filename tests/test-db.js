@@ -14,7 +14,7 @@ function makeItem(overrides = {}) {
     author: 'Test Channel', published_date: '2026-02-11T10:00:00Z',
     fetched_date: '2026-02-11T12:00:00Z',
     markdown_file_path: 'youtube/2026-02-11_vid-001.md',
-    summary: null, tags: null, status: 'new',
+    raw_content: '這是影片字幕內容', summary: null, tags: null, status: 'fetched',
     ...overrides,
   };
 }
@@ -43,7 +43,12 @@ describe('DB', () => {
     assert.ok(tables.includes('app_settings'));
   });
 
-  it('insertContentItem() 應成功插入一筆記錄', () => {
+  it('content_items 應含 raw_content 欄位', () => {
+    const cols = db.db.prepare("PRAGMA table_info(content_items)").all().map(c => c.name);
+    assert.ok(cols.includes('raw_content'));
+  });
+
+  it('insertContentItem() 應成功插入一筆記錄（含 raw_content）', () => {
     const result = db.insertContentItem(makeItem());
     assert.equal(result.changes, 1);
   });
@@ -58,28 +63,47 @@ describe('DB', () => {
     assert.equal(db.itemExists('nonexistent'), false);
   });
 
-  it('getContentItemByItemId() 應回傳完整記錄', () => {
+  it('getContentItemByItemId() 應回傳完整記錄（含 raw_content）', () => {
     const item = db.getContentItemByItemId('vid-001');
     assert.equal(item.title, 'Test Video');
-    assert.equal(item.status, 'new');
+    assert.equal(item.status, 'fetched');
     assert.equal(item.source_type, 'youtube');
+    assert.equal(item.raw_content, '這是影片字幕內容');
   });
 
-  it('updateContentSummary() 應更新摘要和狀態', () => {
+  it('updateContentSummary() 應更新摘要並設 status=summarized', () => {
     db.updateContentSummary('vid-001', '這是摘要');
     const updated = db.getContentItemByItemId('vid-001');
     assert.equal(updated.summary, '這是摘要');
-    assert.equal(updated.status, 'processed');
+    assert.equal(updated.status, 'summarized');
   });
 
   it('getContentItems() 分頁與篩選', () => {
-    db.insertContentItem(makeItem({ item_id: 'rss-001', source_type: 'rss', title: 'RSS Article', status: 'new' }));
-    db.insertContentItem(makeItem({ item_id: 'vid-002', title: 'Video 2', status: 'new' }));
+    db.insertContentItem(makeItem({ item_id: 'rss-001', source_type: 'rss', title: 'RSS Article', status: 'fetched' }));
+    db.insertContentItem(makeItem({ item_id: 'vid-002', title: 'Video 2', status: 'fetched' }));
 
     assert.equal(db.getContentItems().length, 3);
     assert.equal(db.getContentItems({ sourceType: 'rss' }).length, 1);
-    assert.equal(db.getContentItems({ status: 'new' }).length, 2);
+    assert.equal(db.getContentItems({ status: 'fetched' }).length, 2);
     assert.equal(db.getContentItems({ limit: 2 }).length, 2);
+  });
+
+  it('getContentItems() 支援 statuses 陣列篩選', () => {
+    // vid-001 is now 'summarized', rss-001 and vid-002 are 'fetched'
+    const fetched = db.getContentItems({ statuses: ['fetched'] });
+    assert.equal(fetched.length, 2);
+    const both = db.getContentItems({ statuses: ['fetched', 'summarized'] });
+    assert.equal(both.length, 3);
+  });
+
+  it('getItemsByStatus() 應回傳指定狀態的所有項目', () => {
+    const fetchedItems = db.getItemsByStatus('fetched');
+    assert.equal(fetchedItems.length, 2);
+    assert.ok(fetchedItems.every(i => i.status === 'fetched'));
+
+    const summarizedItems = db.getItemsByStatus('summarized');
+    assert.equal(summarizedItems.length, 1);
+    assert.equal(summarizedItems[0].item_id, 'vid-001');
   });
 
   it('markContentRead() 應更新 is_read 欄位', () => {
@@ -107,12 +131,13 @@ describe('DB', () => {
     db.markContentRead(item.id, false);
   });
 
-  it('getUnreadCounts() 應回傳正確未讀數', () => {
-    // Mark vid-001 as processed and then get unread counts
-    db.updateContentSummary('vid-001', '摘要內容');
+  it('getUnreadCounts() 應計入 summarized 和 processed 狀態', () => {
+    // vid-001 is summarized, rss-001 and vid-002 are fetched (should NOT be counted)
     const counts = db.getUnreadCounts();
     assert.ok(typeof counts.all === 'number', 'all should be a number');
     assert.ok(typeof counts.bySource === 'object', 'bySource should be an object');
+    // Only summarized items should be counted (not fetched)
+    assert.equal(counts.all, 1); // just vid-001 (summarized, unread)
   });
 
   // --- failed_items ---

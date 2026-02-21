@@ -96,6 +96,10 @@ class ConfigManager extends EventEmitter {
     return this.get().download;
   }
 
+  getLLMConfig() {
+    return this.get().llm;
+  }
+
   getLogLevel() {
     return this.get().app.logLevel || 'info';
   }

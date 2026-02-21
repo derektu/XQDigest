@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ValidationStatus from './ValidationStatus';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -49,17 +49,22 @@ function generateId(type, name) {
   return `${prefix}-${Date.now().toString(36)}`;
 }
 
-const MIN_CHECK_INTERVAL = import.meta.env.DEV ? 1 : 300;
+const MIN_CHECK_INTERVAL = import.meta.env.DEV ? 1 : 5; // 分鐘
 
 const DEFAULTS = {
   id: '', type: 'youtube', name: '', url: '',
-  checkInterval: 3600, maxItems: 10, lookbackDays: 7,
+  checkInterval: 60, maxItems: 10, lookbackDays: 7,
   prompt: '', enabled: true,
 };
 
 export default function DataSourceForm({ initial, onSave, onCancel, onValidate }) {
   const isEdit = !!initial;
-  const [form, setForm] = useState({ ...DEFAULTS, ...initial });
+  const initialForm = { ...DEFAULTS, ...initial };
+  if (initial?.checkInterval) {
+    initialForm.checkInterval = Math.round(initial.checkInterval / 60);
+  }
+  const [form, setForm] = useState(initialForm);
+  const mouseDownOnOverlay = useRef(false);
   const [idManual, setIdManual] = useState(isEdit);
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -103,7 +108,7 @@ export default function DataSourceForm({ initial, onSave, onCancel, onValidate }
     if (!/^[a-z0-9][a-z0-9-]*$/.test(form.id)) errs.id = '只允許小寫字母、數字、連字號';
     if (!form.name.trim()) errs.name = '必填';
     if (!form.url.trim()) errs.url = '必填';
-    if (form.checkInterval < MIN_CHECK_INTERVAL) errs.checkInterval = `最少 ${MIN_CHECK_INTERVAL} 秒`;
+    if (form.checkInterval < MIN_CHECK_INTERVAL) errs.checkInterval = `最少 ${MIN_CHECK_INTERVAL} 分鐘`;
     if (form.maxItems < 1) errs.maxItems = '最少 1';
     if (form.lookbackDays < 1) errs.lookbackDays = '最少 1 天';
     setErrors(errs);
@@ -113,7 +118,7 @@ export default function DataSourceForm({ initial, onSave, onCancel, onValidate }
   const doSave = async () => {
     setSaving(true);
     try {
-      await onSave(form);
+      await onSave({ ...form, checkInterval: form.checkInterval * 60 });
     } catch (err) {
       setErrors({ _general: err.message });
     }
@@ -148,8 +153,12 @@ export default function DataSourceForm({ initial, onSave, onCancel, onValidate }
   const errStyle = { color: 'var(--color-danger)', fontSize: 12 };
 
   return (
-    <div style={formStyle} onClick={onCancel}>
-      <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+    <div
+      style={formStyle}
+      onMouseDown={(e) => { mouseDownOnOverlay.current = (e.target === e.currentTarget); }}
+      onMouseUp={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) onCancel(); }}
+    >
+      <div style={modalStyle} onMouseDown={(e) => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 16px', color: 'var(--color-text-primary)' }}>
           {isEdit ? '編輯資料源' : '新增資料源'}
         </h3>
@@ -211,7 +220,7 @@ export default function DataSourceForm({ initial, onSave, onCancel, onValidate }
 
         <div style={{ display: 'flex', gap: 12 }}>
           <div style={{ ...fieldStyle, flex: 1 }}>
-            <label style={labelStyle}>檢查間隔 (秒)</label>
+            <label style={labelStyle}>檢查間隔 (分鐘)</label>
             <input type="number" value={rawInputs.checkInterval ?? form.checkInterval} onChange={(e) => setNum('checkInterval', e.target.value)} onBlur={() => clearRaw('checkInterval')} style={inputStyle} min={MIN_CHECK_INTERVAL} />
             {errors.checkInterval && <span style={errStyle}>{errors.checkInterval}</span>}
           </div>

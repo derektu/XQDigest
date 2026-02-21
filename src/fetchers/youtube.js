@@ -11,6 +11,7 @@ class PermanentError extends Error {
   constructor(message) {
     super(message);
     this.name = 'PermanentError';
+    this.permanent = true;
   }
 }
 

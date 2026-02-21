@@ -94,6 +94,7 @@ export default function ContentCard({ item, active, onClick }) {
   const preview = getSummaryPreview(item.summary);
   const relTime = formatRelativeTime(item.published_date);
   const typeLabel = TYPE_LABEL[item.source_type] || item.source_type?.toUpperCase();
+  const isPending = item.status === 'fetched';
 
   return (
     <div style={styles.card(active)} onClick={onClick}>
@@ -106,7 +107,10 @@ export default function ContentCard({ item, active, onClick }) {
         {relTime && <><span>·</span><span>{relTime}</span></>}
         <span style={styles.typeTag(item.source_type)}>{typeLabel}</span>
       </div>
-      {preview && <div style={styles.preview}>{preview}</div>}
+      {isPending
+        ? <div style={{ ...styles.preview, fontStyle: 'italic', color: 'var(--color-text-muted)' }}>摘要產生中...</div>
+        : preview && <div style={styles.preview}>{preview}</div>
+      }
     </div>
   );
 }

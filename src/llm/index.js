@@ -19,9 +19,11 @@ class LLMServiceConfig {
 }
 
 class LLMService {
-  constructor(config, logger) {
+  constructor(config, logger, llmLogger) {
     const cfg = config instanceof LLMServiceConfig ? config : new LLMServiceConfig(config);
     this.logger = logger || Logger.getLogger('LLMService');
+    this.llmLogger = llmLogger || null;
+    this.providerName = cfg.provider;
     this.provider = this._createProvider(cfg, this.logger);
     this.defaultPrompt = cfg.summarizationPrompt || DEFAULT_SUMMARIZE_PROMPT;
   }
@@ -46,7 +48,8 @@ class LLMService {
    * @returns {Promise<string>} Raw response text
    */
   async chat(messages, options = {}) {
-    return this.provider.chatCompletion(messages, options);
+    const result = await this.provider.chatCompletion(messages, options);
+    return result.text;
   }
 
   /**
@@ -55,15 +58,17 @@ class LLMService {
    * @param {string} content - Content to summarize
    * @param {string} title - Content title
    * @param {string} [customPrompt] - Optional custom system prompt override
+   * @param {string} [itemId] - Item ID for LLM logging
    * @returns {Promise<string>} Raw LLM response text
    */
-  async summarize(content, title, customPrompt) {
+  async summarize(content, title, customPrompt, itemId) {
     const prompt = customPrompt || this.defaultPrompt;
     const useJsonFormat = (prompt === DEFAULT_SUMMARIZE_PROMPT);
     const systemContent = useJsonFormat ? (prompt + JSON_FORMAT_INSTRUCTION) : prompt;
     const userMessage = `以下是「${title}」的內容：\n\n${content}`;
 
     this.logger.debug(`Calling LLM for summary: ${title}`);
+    const startTime = Date.now();
     try {
       const response = await this.provider.chatCompletion(
         [
@@ -73,19 +78,44 @@ class LLMService {
         useJsonFormat ? { responseFormat: 'json' } : {}
       );
 
+      const durationMs = Date.now() - startTime;
+      if (this.llmLogger && itemId) {
+        this.llmLogger.log({
+          itemId,
+          provider: this.providerName,
+          model: this.provider.model,
+          promptTokens: response.usage?.promptTokens ?? null,
+          completionTokens: response.usage?.completionTokens ?? null,
+          durationMs,
+          status: 'success',
+        });
+      }
+
+      const text = response.text;
       if (!useJsonFormat) {
         this.logger.debug(`LLM summary completed: ${title}`);
-        return response;
+        return text;
       }
 
       // Built-in default prompt uses JSON wrapper — extract summary field
-      const parsed = this._parseJSON(response);
-      const extracted = parsed.summary || parsed.raw || response;
+      const parsed = this._parseJSON(text);
+      const extracted = parsed.summary || parsed.raw || text;
       const summaryText = typeof extracted === 'string' ? extracted : JSON.stringify(extracted, null, 2);
 
       this.logger.debug(`LLM summary completed: ${title}`);
       return summaryText;
     } catch (err) {
+      const durationMs = Date.now() - startTime;
+      if (this.llmLogger && itemId) {
+        this.llmLogger.log({
+          itemId,
+          provider: this.providerName,
+          model: this.provider.model,
+          durationMs,
+          status: 'error',
+          error: err.message,
+        });
+      }
       this.logger.error(`LLM summarize failed for "${title}": ${err.message}`);
       throw err;
     }
@@ -106,6 +136,7 @@ class LLMService {
 
   updateConfig(config) {
     const cfg = config instanceof LLMServiceConfig ? config : new LLMServiceConfig(config);
+    this.providerName = cfg.provider;
     this.provider = this._createProvider(cfg, this.logger);
     this.defaultPrompt = cfg.summarizationPrompt || DEFAULT_SUMMARIZE_PROMPT;
   }

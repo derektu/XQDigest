@@ -13,5 +13,11 @@
     "retryAttempts": 3,
     "retryDelay": 1000,
     "timeoutMs": 30000
+  },
+
+  "llm": {
+    "retryAttempts": 3,
+    "retryDelay": 5000,
+    "requestsPerMinute": 0
   }
 }

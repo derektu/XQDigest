@@ -146,13 +146,13 @@ describe('DataSourceManager', () => {
       source_type: 'rss', source_id: 'stats-src', item_id: 'ci-1',
       title: 'T1', url: 'http://1', author: 'A',
       published_date: '2026-01-01', fetched_date: '2026-01-01',
-      markdown_file_path: 'f1.md', summary: null, tags: null, status: 'new',
+      markdown_file_path: 'f1.md', raw_content: null, summary: null, tags: null, status: 'fetched',
     });
     db.insertContentItem({
       source_type: 'rss', source_id: 'stats-src', item_id: 'ci-2',
       title: 'T2', url: 'http://2', author: 'A',
       published_date: '2026-01-02', fetched_date: '2026-01-02',
-      markdown_file_path: 'f2.md', summary: 'S', tags: null, status: 'processed',
+      markdown_file_path: 'f2.md', raw_content: null, summary: 'S', tags: null, status: 'summarized',
     });
     db.insertFailedItem({
       source_type: 'rss', source_id: 'stats-src', item_id: 'fi-1',

@@ -195,7 +195,9 @@ export default function ContentDetail({ item, onMarkUnread }) {
       </div>
 
       <div style={styles.body}>
-        {item.summary ? (
+        {item.status === 'fetched' ? (
+          <div style={styles.noSummary}>摘要產生中...</div>
+        ) : item.summary ? (
           <div className="md-content">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {item.summary}

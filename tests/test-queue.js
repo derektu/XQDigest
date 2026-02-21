@@ -169,6 +169,22 @@ describe('DownloadQueue', () => {
     assert.equal(queue.queue.length, 0, 'pending queue should be empty after stop');
   });
 
+  it('error.permanent=true 應立即觸發 taskFailed 不重試', async () => {
+    const queue = new DownloadQueue({ concurrentLimit: 1, retryAttempts: 3, retryDelay: 50 });
+    const retries = [];
+    const failed = [];
+    queue.on('taskRetry', (task, count) => retries.push(count));
+    queue.on('taskFailed', (task) => failed.push(task.id));
+
+    const permErr = new Error('no subtitles');
+    permErr.permanent = true;
+    queue.addTask({ id: 'perm', name: 'perm', execute: async () => { throw permErr; } });
+    await sleep(200);
+
+    assert.equal(retries.length, 0, 'should not retry');
+    assert.deepEqual(failed, ['perm']);
+  });
+
   it('drain() 應等待所有 active 任務完成', async () => {
     const queue = new DownloadQueue({ concurrentLimit: 2 });
     const completed = [];

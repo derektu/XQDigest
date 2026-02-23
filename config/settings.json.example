@@ -18,6 +18,8 @@
   "llm": {
     "retryAttempts": 3,
     "retryDelay": 5000,
-    "requestsPerMinute": 0
+    "requestsPerMinute": 0,
+    "_summarizationPrompt說明": "系統預設摘要 prompt（優先級低於 UI 設定的 prompt），留空使用程式內建預設",
+    "summarizationPrompt": ""
   }
 }

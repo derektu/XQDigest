@@ -95,12 +95,19 @@ class AppEngine extends EventEmitter {
     return this._db.getAppSetting('llm');
   }
 
+  // 建立 LLMServiceConfig，以 settings.json 的 summarizationPrompt 作為 fallback
+  _buildLLMConfig(data) {
+    const configPrompt = this._configManager.getLLMConfig().summarizationPrompt;
+    const summarizationPrompt = data.summarizationPrompt || configPrompt || '';
+    return new LLMServiceConfig({ ...data, summarizationPrompt });
+  }
+
   setLLMSettings(data) {
     if (!this._db) throw new Error('Engine not running');
     this._db.setAppSetting('llm', data);
     // Re-initialize LLM service
     if (data && data.apiKey) {
-      this._llmService = new LLMService(new LLMServiceConfig(data), null, this._llmLogger);
+      this._llmService = new LLMService(this._buildLLMConfig(data), null, this._llmLogger);
       if (this._scheduler) this._scheduler.updateLLMService(this._llmService);
       if (this._llmQueue) this._llmQueue.updateRateLimit(data.requestsPerMinute || 0);
       if (this._logger) this._logger.info(`LLM re-configured: ${data.provider} / ${data.model}`);
@@ -181,7 +188,7 @@ class AppEngine extends EventEmitter {
       this._llmService = null;
       const llmSettings = this._db.getAppSetting('llm');
       if (llmSettings && llmSettings.apiKey) {
-        this._llmService = new LLMService(new LLMServiceConfig(llmSettings), null, this._llmLogger);
+        this._llmService = new LLMService(this._buildLLMConfig(llmSettings), null, this._llmLogger);
         this._logger.info(`LLM configured: ${llmSettings.provider} / ${llmSettings.model}`);
       } else {
         this._logger.warn('No LLM API key configured, summaries will be skipped');

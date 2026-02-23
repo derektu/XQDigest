@@ -17,5 +17,6 @@ module.exports = {
     retryAttempts: 3,      // LLM 呼叫重試次數
     retryDelay: 5000,      // LLM 重試間隔（ms）
     requestsPerMinute: 0,  // LLM rate limit（0 = 無限制）
+    summarizationPrompt: '', // 預設摘要 prompt（空字串 = 使用程式內建預設）
   },
 };

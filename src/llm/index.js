@@ -2,8 +2,11 @@ const OpenAIProvider = require('./openai');
 const GeminiProvider = require('./gemini');
 const Logger = require('../logger');
 
-const DEFAULT_SUMMARIZE_PROMPT = '你是一個專業的內容摘要助手。請用繁體中文總結以下內容的重點，並列出 3-5 個關鍵要點。';
-const JSON_FORMAT_INSTRUCTION = '\n\n請以 JSON 格式回應，僅包含一個 "summary" 欄位。';
+const DEFAULT_SUMMARIZE_PROMPT = `你是一個專業的財經內容摘要助手。請用繁體中文總結以下內容的重點。
+
+輸出格式：
+第一段：以 2-3 句話概述整體內容。
+關鍵要點（3-5 條，每條以「• 」開頭）：列出最重要的資訊、數據或觀點。`;
 
 class LLMServiceConfig {
   constructor({ provider, apiKey, model, maxTokens = 1000, temperature = 0.7, baseUrl, systemPrompt = '', summarizationPrompt } = {}) {
@@ -62,9 +65,7 @@ class LLMService {
    * @returns {Promise<string>} Raw LLM response text
    */
   async summarize(content, title, customPrompt, itemId) {
-    const prompt = customPrompt || this.defaultPrompt;
-    const useJsonFormat = (prompt === DEFAULT_SUMMARIZE_PROMPT);
-    const systemContent = useJsonFormat ? (prompt + JSON_FORMAT_INSTRUCTION) : prompt;
+    const systemContent = customPrompt || this.defaultPrompt;
     const userMessage = `以下是「${title}」的內容：\n\n${content}`;
 
     this.logger.debug(`Calling LLM for summary: ${title}`);
@@ -75,7 +76,7 @@ class LLMService {
           { role: 'system', content: systemContent },
           { role: 'user', content: userMessage },
         ],
-        useJsonFormat ? { responseFormat: 'json' } : {}
+        {}
       );
 
       const durationMs = Date.now() - startTime;
@@ -91,19 +92,8 @@ class LLMService {
         });
       }
 
-      const text = response.text;
-      if (!useJsonFormat) {
-        this.logger.debug(`LLM summary completed: ${title}`);
-        return text;
-      }
-
-      // Built-in default prompt uses JSON wrapper — extract summary field
-      const parsed = this._parseJSON(text);
-      const extracted = parsed.summary || parsed.raw || text;
-      const summaryText = typeof extracted === 'string' ? extracted : JSON.stringify(extracted, null, 2);
-
       this.logger.debug(`LLM summary completed: ${title}`);
-      return summaryText;
+      return response.text;
     } catch (err) {
       const durationMs = Date.now() - startTime;
       if (this.llmLogger && itemId) {
@@ -118,19 +108,6 @@ class LLMService {
       }
       this.logger.error(`LLM summarize failed for "${title}": ${err.message}`);
       throw err;
-    }
-  }
-
-  _parseJSON(text) {
-    // Strip markdown code fences if present
-    let cleaned = text.trim();
-    const fenceMatch = cleaned.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
-    if (fenceMatch) cleaned = fenceMatch[1].trim();
-    try {
-      return JSON.parse(cleaned);
-    } catch (err) {
-      this.logger.warn(`JSON parse failed, returning raw text: ${err.message}`);
-      return { raw: text };
     }
   }
 

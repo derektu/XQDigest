@@ -153,73 +153,46 @@ describe('LLMService', () => {
     assert.deepEqual(capturedOptions, { responseFormat: 'json' });
   });
 
-  it('summarize() 應解析 JSON 回應並回傳 summary 欄位', async () => {
-    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
-    svc.provider.chatCompletion = async () => ({ text: '{"summary":"摘要文字"}', usage: null });
-
-    const result = await svc.summarize('content text', 'Test Title');
-    assert.equal(result, '摘要文字');
-  });
-
-  it('summarize() JSON 解析失敗時應回傳原始文字', async () => {
-    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
-    svc.provider.chatCompletion = async () => ({ text: 'not json text', usage: null });
-
-    const result = await svc.summarize('content', 'Title');
-    assert.equal(result, 'not json text');
-  });
-
-  it('summarize() 應使用 JSON responseFormat 並以 system message 傳遞 prompt', async () => {
+  it('summarize() 應以 system message 傳遞 prompt，直接回傳 raw text', async () => {
     const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
     let capturedMessages, capturedOptions;
     svc.provider.chatCompletion = async (messages, options) => {
       capturedMessages = messages;
       capturedOptions = options;
-      return { text: '{}', usage: null };
+      return { text: '整體摘要。\n\n• 要點一\n• 要點二', usage: null };
     };
 
-    await svc.summarize('content', 'Title');
-    assert.equal(capturedOptions.responseFormat, 'json');
-    // Summarize prompt should be passed as system message, not via provider's systemPrompt
+    const result = await svc.summarize('content', 'Title');
     assert.equal(capturedMessages[0].role, 'system');
     assert.ok(capturedMessages[0].content.length > 0);
-    // System message 尾端應包含 JSON 格式指示
-    assert.ok(capturedMessages[0].content.endsWith('請以 JSON 格式回應，僅包含一個 "summary" 欄位。'));
     assert.equal(capturedMessages[1].role, 'user');
+    assert.equal(capturedOptions.responseFormat, undefined);
+    assert.equal(result, '整體摘要。\n\n• 要點一\n• 要點二');
   });
 
-  it('summarize() 有 customPrompt 時不附加 JSON 指令，直接回傳 raw text', async () => {
+  it('summarize() 有 customPrompt 時應使用 customPrompt 並直接回傳 raw text', async () => {
     const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
-    let capturedMessages, capturedOptions;
-    svc.provider.chatCompletion = async (messages, options) => {
+    let capturedMessages;
+    svc.provider.chatCompletion = async (messages) => {
       capturedMessages = messages;
-      capturedOptions = options;
       return { text: '## 摘要標題\n\n這是 markdown 格式的摘要', usage: null };
     };
 
     const result = await svc.summarize('content', 'Title', '自訂 prompt');
-    // customPrompt should be used as-is, no JSON instruction appended
-    assert.equal(capturedMessages[0].role, 'system');
     assert.equal(capturedMessages[0].content, '自訂 prompt');
-    // Should NOT request JSON response format
-    assert.equal(capturedOptions.responseFormat, undefined);
-    // Should return raw LLM response without JSON parsing
     assert.equal(result, '## 摘要標題\n\n這是 markdown 格式的摘要');
   });
 
-  it('summarize() config.summarizationPrompt 不應附加 JSON 指令，直接回傳 raw text', async () => {
+  it('summarize() config.summarizationPrompt 應作為預設 prompt', async () => {
     const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '自訂系統 prompt' }, logger);
-    let capturedMessages, capturedOptions;
-    svc.provider.chatCompletion = async (messages, options) => {
+    let capturedMessages;
+    svc.provider.chatCompletion = async (messages) => {
       capturedMessages = messages;
-      capturedOptions = options;
       return { text: '## 摘要結果', usage: null };
     };
 
     const result = await svc.summarize('content', 'Title');
-    // Config summarizationPrompt should be used as-is, no JSON instruction
     assert.equal(capturedMessages[0].content, '自訂系統 prompt');
-    assert.equal(capturedOptions.responseFormat, undefined);
     assert.equal(result, '## 摘要結果');
   });
 
@@ -233,14 +206,6 @@ describe('LLMService', () => {
     );
   });
 
-  it('summarize() 應處理 markdown code fence 包裹的 JSON', async () => {
-    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
-    svc.provider.chatCompletion = async () => ({ text: '```json\n{"summary":"fenced summary"}\n```', usage: null });
-
-    const result = await svc.summarize('content', 'Title');
-    assert.equal(result, 'fenced summary');
-  });
-
   it('summarize() 應呼叫 llmLogger.log() 記錄成功結果', async () => {
     const loggedCalls = [];
     const llmLogger = {
@@ -248,7 +213,7 @@ describe('LLMService', () => {
     };
     const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini' }, logger, llmLogger);
     svc.provider.chatCompletion = async () => ({
-      text: '{"summary":"test"}',
+      text: '整體摘要。\n\n• 要點一\n• 要點二',
       usage: { promptTokens: 100, completionTokens: 50 },
     });
 
@@ -281,21 +246,9 @@ describe('LLMService', () => {
     const loggedCalls = [];
     const llmLogger = { log: (p) => loggedCalls.push(p) };
     const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini' }, logger, llmLogger);
-    svc.provider.chatCompletion = async () => ({ text: '{"summary":"x"}', usage: null });
+    svc.provider.chatCompletion = async () => ({ text: '摘要文字', usage: null });
 
     await svc.summarize('content', 'Title'); // no itemId
     assert.equal(loggedCalls.length, 0);
-  });
-
-  it('_parseJSON() 應正確解析 JSON 字串', () => {
-    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
-    const result = svc._parseJSON('{"summary":"hello"}');
-    assert.equal(result.summary, 'hello');
-  });
-
-  it('_parseJSON() 無效 JSON 應回傳 { raw: text }', () => {
-    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '' }, logger);
-    const result = svc._parseJSON('not json');
-    assert.equal(result.raw, 'not json');
   });
 });

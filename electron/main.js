@@ -18,19 +18,26 @@ let engine = null;
 let trayManager = null;
 
 app.on('ready', async () => {
-  // A. Set data path to userData before AppEngine init (packaged app)
-  process.env.XQDIGEST_DATA_PATH = app.getPath('userData');
+  let userConfigPath;
+  let firstRunFile;
+  let isFirstRun = false;
+
+  if (app.isPackaged) {
+    // A. Packaged app: 資料目錄改到系統 userData
+    process.env.XQDIGEST_DATA_PATH = app.getPath('userData');
+    userConfigPath = path.join(app.getPath('userData'), 'settings.json');
+
+    // B. First-run detection (only in packaged app)
+    firstRunFile = path.join(app.getPath('userData'), '.firstrun');
+    isFirstRun = !fs.existsSync(firstRunFile);
+  }
+  // Dev mode: XQDIGEST_DATA_PATH 不設定 → data/logs 沿用 working folder
 
   // Hide dock icon on macOS (tray-only)
   if (process.platform === 'darwin' && app.dock) {
     app.dock.hide();
   }
 
-  // B. First-run detection
-  const firstRunFile = path.join(app.getPath('userData'), '.firstrun');
-  const isFirstRun = !fs.existsSync(firstRunFile);
-
-  const userConfigPath = path.join(app.getPath('userData'), 'settings.json');
   engine = new AppEngine({ configPath: userConfigPath });
   trayManager = new TrayManager(engine, {
     onCheckUpdate: app.isPackaged
@@ -47,7 +54,7 @@ app.on('ready', async () => {
 
   engine.on('serverReady', (port) => {
     trayManager.setPort(port);
-    if (isFirstRun) {
+    if (isFirstRun && firstRunFile) {
       fs.writeFileSync(firstRunFile, '');
       shell.openExternal(`http://localhost:${port}/#/settings`);
     }

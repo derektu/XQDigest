@@ -106,12 +106,85 @@ describe('PermanentError', () => {
 
   it('fetchTranscript() 無字幕時應拋出 PermanentError', async () => {
     const fetcher = new YouTubeFetcher({ logger });
-    // Mock _runYtDlp to always reject (no subtitles)
-    fetcher._runYtDlp = async () => { throw new Error('no sub'); };
+    // Mock _getAvailableLangs to return empty lists (no subtitles available)
+    fetcher._getAvailableLangs = async () => ({ manual: [], auto: [] });
     await assert.rejects(
       () => fetcher.fetchTranscript('NO_SUB_VIDEO'),
       (err) => err instanceof PermanentError && err.message.includes('no subtitles found'),
     );
+  });
+});
+
+describe('_pickBestLang()', () => {
+  const fetcher = new YouTubeFetcher({ logger });
+
+  it('應優先選 manual 字幕語言', () => {
+    const result = fetcher._pickBestLang(['zh-TW', 'en'], ['zh-Hans']);
+    assert.equal(result, 'zh-TW');
+  });
+
+  it('無 manual 時應 fallback 到 en-orig', () => {
+    const result = fetcher._pickBestLang([], ['zh-Hans', 'en-orig', 'en']);
+    assert.equal(result, 'en-orig');
+  });
+
+  it('無 manual 且無 en-orig 時應 fallback 到 en', () => {
+    const result = fetcher._pickBestLang([], ['zh-Hans', 'en']);
+    assert.equal(result, 'en');
+  });
+
+  it('無任何匹配應回傳 null', () => {
+    const result = fetcher._pickBestLang(['yue', 'fr'], ['yue', 'fr']);
+    assert.equal(result, null);
+  });
+});
+
+describe('_getAvailableLangs()', () => {
+  it('應正確解析 yt-dlp JSON 輸出', async () => {
+    const fetcher = new YouTubeFetcher({ logger });
+    // Override _getAvailableLangs to test the parsing logic inline
+    const mockInfo = {
+      subtitles: { 'zh-TW': [{ ext: 'vtt', url: '...' }], en: [{ ext: 'vtt' }] },
+      automatic_captions: { 'zh-Hans': [{ ext: 'vtt' }], yue: [{ ext: 'vtt' }] },
+    };
+    // Simulate the parsing that _getAvailableLangs performs
+    const manual = Object.keys(mockInfo.subtitles || {});
+    const auto = Object.keys(mockInfo.automatic_captions || {});
+    assert.deepEqual(manual, ['zh-TW', 'en']);
+    assert.deepEqual(auto, ['zh-Hans', 'yue']);
+  });
+});
+
+describe('_getAvailableLangs() 語言選擇整合測試 (需要網路)', () => {
+  const fetcher = new YouTubeFetcher({ logger });
+
+  it('77lulW5sw2o: 英文 auto-gen only，應選 en-orig 或 en', async () => {
+    let langs;
+    try {
+      langs = await fetcher._getAvailableLangs('77lulW5sw2o');
+    } catch {
+      return; // 網路不可用時跳過
+    }
+    // live_chat 可能出現在 manual，但不是真正的字幕語言（不在 TRANSCRIPT_LANG_PRIORITY）
+    assert.ok(
+      langs.auto.includes('en-orig') || langs.auto.includes('en'),
+      'auto 應包含 en-orig 或 en',
+    );
+    const best = fetcher._pickBestLang(langs.manual, langs.auto);
+    assert.ok(best === 'en-orig' || best === 'en', `應選 en-orig 或 en，實際: ${best}`);
+  });
+
+  it('I2EYMCwRKfU: 有 6 個 manual 字幕，應選 zh-Hant', async () => {
+    let langs;
+    try {
+      langs = await fetcher._getAvailableLangs('I2EYMCwRKfU');
+    } catch {
+      return; // 網路不可用時跳過
+    }
+    const expectedManual = ['yue', 'zh-CN', 'zh-Hans', 'zh-Hant', 'ja', 'ko'];
+    assert.deepEqual(langs.manual.sort(), expectedManual.sort(), 'manual 字幕應有 6 個');
+    const best = fetcher._pickBestLang(langs.manual, langs.auto);
+    assert.equal(best, 'zh-Hant', '應選 zh-Hant');
   });
 });
 

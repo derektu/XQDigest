@@ -64,15 +64,22 @@ class YouTubeFetcher {
 
   /**
    * Download transcript for a YouTube video using yt-dlp.
-   * Downloads both manual and auto-generated subtitles in a single call,
-   * then picks the best available language from TRANSCRIPT_LANG_PRIORITY.
+   * Step 1: Query available subtitle languages via --dump-json.
+   * Step 2: Pick the best single language from TRANSCRIPT_LANG_PRIORITY.
+   * Step 3: Download only that one language to minimize HTTP requests.
    * @param {string} videoId
    * @returns {string} Full transcript text
    */
   async fetchTranscript(videoId) {
+    const { manual, auto } = await this._getAvailableLangs(videoId);
+    const bestLang = this._pickBestLang(manual, auto);
+    if (!bestLang) {
+      throw new PermanentError(`yt-dlp: no subtitles found for ${videoId}`);
+    }
+
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ytdlp-sub-'));
     try {
-      await this._runYtDlp(videoId, tmpDir);
+      await this._runYtDlp(videoId, tmpDir, bestLang);
       const files = fs.readdirSync(tmpDir).filter(f => f.endsWith('.vtt'));
       if (files.length > 0) {
         const picked = this._pickBestVtt(files) || files[0];
@@ -91,16 +98,61 @@ class YouTubeFetcher {
   }
 
   /**
-   * Run yt-dlp to download subtitles for a video.
-   * Uses both --write-subs (manual/finalized) and --write-auto-sub (live ASR),
-   * requesting all preferred languages in one call.
+   * Query available subtitle languages for a video via yt-dlp --dump-json.
+   * @param {string} videoId
+   * @returns {{ manual: string[], auto: string[] }}
    */
-  _runYtDlp(videoId, outputDir) {
+  _getAvailableLangs(videoId) {
+    return new Promise((resolve, reject) => {
+      const url = `https://www.youtube.com/watch?v=${videoId}`;
+      const args = ['--dump-json', '--skip-download', '--no-warnings', '--no-progress', url];
+      execFile(this._ytDlpBin, args, { timeout: 60000 }, (err, stdout) => {
+        if (err) return reject(err);
+        try {
+          const info = JSON.parse(stdout);
+          resolve({
+            manual: Object.keys(info.subtitles || {}),
+            auto: Object.keys(info.automatic_captions || {}),
+          });
+        } catch (parseErr) {
+          reject(new Error(`Failed to parse yt-dlp JSON: ${parseErr.message}`));
+        }
+      });
+    });
+  }
+
+  /**
+   * Pick the best subtitle language from available lists.
+   * If manual subtitles exist, pick by TRANSCRIPT_LANG_PRIORITY.
+   * If no manual subtitles match, fall back to the original English ASR
+   * ('en-orig' preferred, then 'en') to avoid machine-translated auto captions.
+   * @param {string[]} manualLangs
+   * @param {string[]} autoLangs
+   * @returns {string|null}
+   */
+  _pickBestLang(manualLangs, autoLangs) {
+    for (const lang of TRANSCRIPT_LANG_PRIORITY) {
+      if (manualLangs.includes(lang)) return lang;
+    }
+    // No manual subtitles — use original English ASR instead of machine-translated auto captions
+    if (autoLangs.includes('en-orig')) return 'en-orig';
+    if (autoLangs.includes('en')) return 'en';
+    return null;
+  }
+
+  /**
+   * Run yt-dlp to download subtitles for a video.
+   * Downloads only the specified language to minimize HTTP requests.
+   * @param {string} videoId
+   * @param {string} outputDir
+   * @param {string} subLang - Single language code to download
+   */
+  _runYtDlp(videoId, outputDir, subLang) {
     return new Promise((resolve, reject) => {
       const url = `https://www.youtube.com/watch?v=${videoId}`;
       const args = [
         '--write-sub', '--write-auto-sub',
-        '--sub-lang', TRANSCRIPT_LANG_PRIORITY.join(','),
+        '--sub-lang', subLang,
         '--sub-format', 'vtt',
         '--skip-download', '--no-warnings', '--no-progress',
         '-o', path.join(outputDir, 'sub'),

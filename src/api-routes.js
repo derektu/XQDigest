@@ -54,7 +54,13 @@ function createRoutes(engine) {
       pattern: '/api/version',
       handler: () => {
         const { version } = require('../package.json');
-        return { data: { version } };
+        let isPackaged = false;
+        try {
+          isPackaged = require('electron').app.isPackaged;
+        } catch {
+          // CLI 模式：electron 不可用，isPackaged 維持 false
+        }
+        return { data: { version, isPackaged } };
       },
     },
     // Literal routes BEFORE parametric routes

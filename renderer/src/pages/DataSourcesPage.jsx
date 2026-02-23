@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import useDataSources from '../hooks/useDataSources';
 import DataSourceList from '../components/DataSourceList';
 import DataSourceForm from '../components/DataSourceForm';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { app as appApi } from '../ipc';
 
 const headerStyle = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -36,6 +37,11 @@ export function DataSourcesContent() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
+  const [isPackaged, setIsPackaged] = useState(false);
+
+  useEffect(() => {
+    appApi.getVersion().then(data => setIsPackaged(!!data.isPackaged)).catch(() => {});
+  }, []);
 
   const handleAdd = () => {
     setEditTarget(null);
@@ -151,6 +157,7 @@ export function DataSourcesContent() {
           onSave={handleSave}
           onCancel={() => { setShowForm(false); setEditTarget(null); }}
           onValidate={validate}
+          isPackaged={isPackaged}
         />
       )}
 

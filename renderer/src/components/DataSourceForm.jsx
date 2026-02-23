@@ -49,15 +49,14 @@ function generateId(type, name) {
   return `${prefix}-${Date.now().toString(36)}`;
 }
 
-const MIN_CHECK_INTERVAL = import.meta.env.DEV ? 1 : 5; // 分鐘
-
 const DEFAULTS = {
   id: '', type: 'youtube', name: '', url: '',
   checkInterval: 60, maxItems: 10, lookbackDays: 7,
   prompt: '', enabled: true,
 };
 
-export default function DataSourceForm({ initial, onSave, onCancel, onValidate }) {
+export default function DataSourceForm({ initial, onSave, onCancel, onValidate, isPackaged = false }) {
+  const MIN_CHECK_INTERVAL = isPackaged ? 5 : 1; // 分鐘
   const isEdit = !!initial;
   const initialForm = { ...DEFAULTS, ...initial };
   if (initial?.checkInterval) {

@@ -39,6 +39,7 @@ win:
     - target: nsis
       arch: [x64]
   icon: build/source-icon.png
+  artifactName: "${productName}-Setup-${version}.${ext}"
   extraResources:
     - from: build/bin/win/yt-dlp.exe
       to: bin/yt-dlp.exe

@@ -1,7 +1,7 @@
-# XQDigest - 技術規格文件 v2.1
+# XQDigest - 技術規格文件 v2.2
 
 > XQDigest: 財經資訊自動摘要工具
-> 本文件記錄 v0.3.3（Phase 0~6 全部完成）的實際技術規格，供維護與擴展參考。
+> 本文件記錄 v0.3.x（Phase 0~7 全部完成）的實際技術規格，供維護與擴展參考。
 > 注意：v1.2 規格文件為開發前的設計藍圖，本文件反映最終實作。
 
 ---
@@ -36,6 +36,7 @@ XQDigest 是一款專為財經專業人士設計的桌面應用程式。透過�
 | Phase 4 | Feed 頁面（內容清單 + 已讀管理） | ✅ 完成 |
 | Phase 5 | 下載與摘要分離（兩階段處理架構） | ✅ 完成 |
 | Phase 6 | 打包、版號顯示、Tray 自動更新檢查 | ✅ 完成 |
+| Phase 7 | OpenAI OAuth 登入（PKCE + Streaming） | ✅ 完成 |
 
 ---
 
@@ -265,6 +266,8 @@ stopped → starting → running ↔ paused → stopping → stopped
 7. YouTubeFetcher / RSSFetcher
 8. LLMLogger — LLM 呼叫記錄
 9. LLMService — LLM 客戶端（從 DB 讀取設定）
+9.5. OAuthClient — 注入 DB storage（key=`openai_oauth_tokens`），解析 openBrowser
+9.6. 若 llmSettings.provider === 'openai-oauth' → 以 oauthClient 重建 LLMService
 10. LLMQueue — 摘要佇列
 11. Scheduler — 定時排程器
 12. 設定熱重載（config hot-reload）
@@ -329,6 +332,7 @@ LLM 客戶端，支援三種 provider：
 | `openai` | OpenAI API（使用 openai npm SDK） |
 | `gemini` | Google Gemini API（使用原生 fetch） |
 | `openai-compatible` | 相容 OpenAI API 格式的第三方端點 |
+| `openai-oauth` | OpenAI Responses API，OAuth 帳號授權（`gpt-5.2`，SSE streaming，usage=null） |
 
 **摘要 Prompt 優先順序：**
 1. 資料源自訂 `prompt`（`data_sources.prompt`）
@@ -337,6 +341,28 @@ LLM 客戶端，支援三種 provider：
 4. 程式內建預設（繁中，plain text 輸出格式）
 
 **注意：** 摘要輸出格式為**純文字**（非 JSON），格式由 prompt 中的明確指令控制。
+
+---
+
+### OAuthClient（`src/llm/openai-oauth-client.js`）
+
+PKCE OAuth 2.0 client，封裝 OpenAI 帳號登入流程。
+
+| 方法 | 說明 |
+|------|------|
+| `login()` | 啟動 PKCE 流程（port 1455 callback server，60 秒 timeout） |
+| `logout()` | 清除 token |
+| `getValidToken()` | 自動 refresh（5 分鐘緩衝），回傳有效 access token |
+| `chatCompletion(messages, options)` | 呼叫 Responses API（SSE），回傳 `{text, usage: null}` |
+| `getStatus()` | 同步回傳 `{loggedIn, accountId, expires}` |
+
+Token 存於 `app_settings['openai_oauth_tokens']`。
+
+---
+
+### OpenAIOAuthProvider（`src/llm/openai-oauth.js`）
+
+繼承 `BaseLLMProvider`，委派 `OAuthClient.chatCompletion()`。model 固定 `gpt-5.2`，usage 固定 `null`（Responses API 不回傳 token 計數）。
 
 ---
 
@@ -454,9 +480,12 @@ API server 統一前綴 `/api`，所有回應為 JSON。
 |--------|------|------|
 | GET | `/api/settings/llm` | 取得 LLM 設定（apiKey 以 `****xxxx` 遮罩） |
 | PUT | `/api/settings/llm` | 更新 LLM 設定（若 apiKey 為遮罩格式，保留現有值） |
-| POST | `/api/settings/llm/test` | 測試 LLM 連線並列出可用 models |
+| POST | `/api/settings/llm/test` | 測試 LLM 連線並列出可用 models（`openai-oauth` 時不需 apiKey，驗證 token 狀態） |
+| GET | `/api/settings/llm/oauth/status` | 取得 OAuth 登入狀態（`{loggedIn, accountId, expires}`） |
+| POST | `/api/settings/llm/oauth/login` | 啟動 OAuth login（背景執行，UI polling status） |
+| DELETE | `/api/settings/llm/oauth/logout` | 登出並清除 token |
 
-**共 17 個 endpoints。**
+**共 20 個 endpoints。**
 
 **Engine 狀態限制：** 大多數端點在 engine 非 `running` 狀態時回傳 HTTP 503。例外：`/api/version`、`/api/engine/status`、`/api/content/unread-counts`、`/api/content`、`/api/datasources`（這些在 engine 未啟動時回傳空資料而非 503）。
 
@@ -510,10 +539,10 @@ API server 統一前綴 `/api`，所有回應為 JSON。
 #### 3. Settings 頁（`/settings`）
 
 管理 LLM 設定：
-- Provider 選擇（OpenAI / Gemini / OpenAI-compatible）
-- API Key 輸入（顯示遮罩）
+- Provider 選擇（OpenAI OAuth / OpenAI API Key / Gemini / OpenAI-compatible）；OAuth 模式下顯示登入狀態區塊，隱藏 API Key 欄位，model 固定 gpt-5.2
+- API Key 輸入（顯示遮罩；OAuth 模式隱藏）
 - Base URL（openai-compatible 時顯示）
-- Model 選擇
+- Model 選擇（OAuth 模式固定顯示 gpt-5.2，不可編輯）
 - Max Tokens、Temperature
 - 自訂摘要 Prompt（可覆寫全域預設）
 - 「測試連線」按鈕
@@ -679,7 +708,7 @@ node --test tests/test-config.js       # 執行單一模組測試
 
 ### 版本
 
-**v0.3.3**（Phase 0~6 全部完成）
+**v0.3.x**（Phase 0~7 全部完成）
 
 ### 品牌定位
 
@@ -701,7 +730,7 @@ node --test tests/test-config.js       # 執行單一模組測試
 
 ---
 
-**最後更新**: 2026-02-23
-**規格版本**: 2.1
+**最後更新**: 2026-02-24
+**規格版本**: 2.2
 **產品名稱**: XQDigest - 財經資訊自動摘要工具
-**狀態**: ✅ 對應 v0.3.3 實際實作
+**狀態**: ✅ Phase 0~7 全部完成

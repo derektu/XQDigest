@@ -65,12 +65,21 @@ new OAuthClient({
 **常數（沿用 openai-oauth 專案）：**
 
 ```javascript
-const CLIENT_ID   = 'app_EMoamEEZ73f0CkXaXp7hrann';
-const AUTH_URL    = 'https://auth.openai.com/oauth/authorize';
-const TOKEN_URL   = 'https://auth.openai.com/oauth/token';
-const REDIRECT_URI = 'http://localhost:1455/auth/callback';
-const SCOPES      = 'openid profile email offline_access';
-const API_URL     = 'https://chatgpt.com/backend-api/codex/responses';
+const CLIENT_ID        = 'app_EMoamEEZ73f0CkXaXp7hrann';
+const AUTH_URL         = 'https://auth.openai.com/oauth/authorize';
+const TOKEN_URL        = 'https://auth.openai.com/oauth/token';
+const REDIRECT_URI     = 'http://localhost:1455/auth/callback';
+const SCOPES           = 'openid profile email offline_access';
+const API_URL          = 'https://chatgpt.com/backend-api/codex/responses';
+const LOGIN_TIMEOUT_MS = 60 * 1000;  // 60 秒，逾時後 callback server 關閉並 reject
+```
+
+**PKCE authorization URL 額外參數（OpenAI OAuth flow 所需）：**
+
+```
+id_token_add_organizations: 'true'
+codex_cli_simplified_flow: 'true'
+originator: 'pi'
 ```
 
 **Token 格式：**
@@ -285,11 +294,12 @@ return { text, usage };
 const dbStorage = {
   load:   () => db.getAppSetting('openai_oauth_tokens'),
   save:   (tokens) => db.setAppSetting('openai_oauth_tokens', tokens),
-  delete: () => db.setAppSetting('openai_oauth_tokens', null),
+  delete: () => db.deleteAppSetting('openai_oauth_tokens'),
 };
 ```
 
 > `app_settings` 表已存在，key 為字串，value 為 JSON。無需 schema 變更。
+> key 使用 `'openai_oauth_tokens'`（而非 `'oauth_tokens'`）以避免與其他 app_settings key 衝突。
 
 ### 修改 `src/app-engine.js`
 
@@ -300,7 +310,7 @@ this._oauthClient = null;    // OAuthClient 實例
 this._oauthLoginPromise = null;  // 進行中的 login Promise（防止重複觸發）
 ```
 
-**`start()` 步驟 9 後新增（步驟 9.5）：**
+**`start()` 步驟 9 後新增（步驟 9.5 與 9.6）：**
 
 ```javascript
 // 9.5. Init OAuthClient（注入 DB storage）
@@ -309,9 +319,30 @@ this._oauthClient = new OAuthClient({
   storage: dbStorage,
   openBrowser: this._resolveOpenBrowser(),
 });
+
+// 9.6. 若上次儲存的 provider 為 openai-oauth，此時才能初始化 LLMService
+//       （step 9 的 apiKey 檢查無法涵蓋此 case）
+if (llmSettings?.provider === 'openai-oauth') {
+  const cfg = this._buildLLMConfig({ ...llmSettings, oauthClient: this._oauthClient });
+  this._llmService = new LLMService(cfg, null, this._llmLogger);
+}
 ```
 
-`_resolveOpenBrowser()`：嘗試 require electron shell，失敗時 fallback `require('open')`。
+**`_resolveOpenBrowser()` 實際實作：**
+
+```javascript
+_resolveOpenBrowser() {
+  try {
+    const { shell } = require('electron');
+    if (typeof shell?.openExternal === 'function')
+      return (url) => shell.openExternal(url);
+  } catch { /* not in electron context */ }
+  return async (url) => {
+    const { default: open } = await import('open');
+    open(url);
+  };
+}
+```
 
 **`setLLMSettings()` 新增 case：**
 
@@ -420,16 +451,18 @@ const logoutOAuth = useCallback(async () => {
 
 ### 修改 `renderer/src/pages/SettingsPage.jsx`
 
-**PROVIDERS 清單新增：**
+**PROVIDERS 清單（實際實作順序）：**
 
 ```javascript
 const PROVIDERS = [
-  { value: 'openai',        label: 'OpenAI' },
-  { value: 'gemini',        label: 'Google Gemini' },
-  { value: 'openai-compatible', label: 'OpenAI Compatible' },
-  { value: 'openai-oauth',  label: 'OpenAI（OAuth 登入）' },
+  { value: 'openai-oauth',      label: 'OpenAI（帳號登入）' },
+  { value: 'openai',            label: 'OpenAI（API Key）' },
+  { value: 'gemini',            label: 'Google Gemini（API Key）' },
+  { value: 'openai-compatible', label: 'OpenAI Compatible（API Key）' },
 ];
 ```
+
+> 注意：openai-oauth 排第一（最顯眼），其他 provider label 均加上 `(API Key)` 後綴以區分。
 
 **當 `form.provider === 'openai-oauth'` 時：**
 
@@ -462,7 +495,7 @@ const PROVIDERS = [
 
 | key | value（JSON） |
 |-----|---------------|
-| `'oauth_tokens'` | `{"access":"...","refresh":"...","expires":...,"accountId":"..."}` |
+| `'openai_oauth_tokens'` | `{"access":"...","refresh":"...","expires":...,"accountId":"..."}` |
 
 ---
 
@@ -529,4 +562,4 @@ api-routes.js
 
 4. **Electron `shell.openExternal`**：須確認 Electron main process 允許呼叫（sandboxed renderer 不可直接用）。AppEngine 在 main process 執行，無此限制。
 
-5. **`open` 套件 ESM**：`open@^10` 為 ESM-only，需用 `await import('open')` dynamic import，或改用 `open@^8`（CommonJS）。建議使用 `open@^8` 避免 ESM 混用問題。
+5. **`open` 套件 ESM**：`open@^10` 為 ESM-only，以 `await import('open')` dynamic import 解決，已在 package.json 使用 `open@^10.2.0`。`openai-oauth-client.js` 及 `app-engine.js` 的 fallback 均採此方式。

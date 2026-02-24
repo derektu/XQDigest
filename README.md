@@ -62,7 +62,7 @@
 - LLM Queue 單執行緒 + Sliding window rate limiting，支援 `requestsPerMinute` 設定
 - LLM 呼叫獨立日誌（`logs/llm.log`）：記錄每次呼叫的 provider、model、token 數、耗時
 
-### Phase 6 — 安裝程式與自動更新（規劃中）
+### Phase 6 — 安裝程式與自動更新（已完成）
 
 > 詳見 [doc/Phase6_安裝程式與自動更新_設計文件.md](doc/Phase6_安裝程式與自動更新_設計文件.md)
 
@@ -70,6 +70,15 @@
 - Windows：安裝後建立桌面捷徑，點擊自動開啟設定畫面
 - Mac：首次執行時自動開啟設定畫面
 - 內建自動更新機制：啟動時檢查 GitHub Releases 是否有新版本，有則提示更新流程
+
+### Phase 7 — OpenAI OAuth 登入（已完成）
+
+> 詳見 [doc/Phase7_OpenAI_OAuth_設計文件.md](doc/Phase7_OpenAI_OAuth_設計文件.md)
+
+- 支援 OpenAI 帳號 OAuth 登入（PKCE 流程），免 API Key 使用 `gpt-5.2`
+- OAuth token 存於 SQLite，重啟後自動恢復登入狀態
+- openai.js / gemini.js 改為 streaming，支援 `onChunk` callback
+- Settings UI 新增「OpenAI（帳號登入）」provider 選項，顯示登入狀態與到期時間
 
 ## 環境需求
 
@@ -148,8 +157,8 @@ cp config/settings.json.example config/settings.json
    - CLI 模式：瀏覽器訪問 `http://localhost:3579/settings`
    - Electron 模式：系統匣右鍵 → Settings
 3. **配置 LLM**：
-   - 選擇 Provider（OpenAI / Gemini / OpenAI-compatible）
-   - 輸入 API Key 並驗證
+   - 選擇 Provider（OpenAI（帳號登入 OAuth）/ OpenAI（API Key）/ Gemini / OpenAI-compatible）
+   - 輸入 API Key 並驗證（OAuth 模式下改為帳號登入）
    - 選擇模型與參數
 4. **新增資料源**：點擊「新增資料源」添加 YouTube 頻道或 RSS Feed
 
@@ -431,10 +440,12 @@ src/
 │   ├── youtube.js        # YouTube 頻道掃描 + yt-dlp 字幕
 │   └── rss.js            # RSS/Atom Feed 解析
 └── llm/
-    ├── base.js           # LLM Provider 基底類別
-    ├── index.js          # LLM 統一入口
-    ├── openai.js         # OpenAI / OpenAI-compatible
-    └── gemini.js         # Google Gemini
+    ├── base.js                   # LLM Provider 基底類別
+    ├── index.js                  # LLM 統一入口
+    ├── openai.js                 # OpenAI / OpenAI-compatible
+    ├── openai-oauth-client.js    # OAuth PKCE client（token 管理 + SSE）
+    ├── openai-oauth.js           # OpenAIOAuthProvider（繼承 BaseLLMProvider）
+    └── gemini.js                 # Google Gemini
 
 electron/
 ├── main.js               # Electron main process
@@ -457,4 +468,5 @@ renderer/
 - `doc/Phase4_Settings_設計文件.md` — Phase 4 完整的設定UI，整合LLM的設定以及DataSource的管理
 - `doc/Phase5_下載與摘要分離_設計文件.md` — Phase 5 雙 Pipeline 架構、LLMQueue、LLMLogger、狀態流程設計
 - `doc/Phase6_安裝程式與自動更新_設計文件.md` — Phase 6 Installer 打包、路徑設計、版號顯示、首次執行、自動更新
+- `doc/Phase7_OpenAI_OAuth_設計文件.md` — Phase 7 OpenAI OAuth PKCE 流程、Streaming 架構、AppEngine 整合、UI 設計
 - `CLAUDE.md` — AI 開發規範與架構導覽

@@ -120,9 +120,10 @@ const btnSecondary = {
 };
 
 const PROVIDERS = [
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'gemini', label: 'Google Gemini' },
-  { value: 'openai-compatible', label: 'OpenAI Compatible' },
+  { value: 'openai-oauth',      label: 'OpenAI（帳號登入）' },
+  { value: 'openai',            label: 'OpenAI (API Key)' },
+  { value: 'gemini',            label: 'Google Gemini (API Key)' },
+  { value: 'openai-compatible', label: 'OpenAI Compatible (API Key)' },
 ];
 
 function makeInitialForm(settings) {
@@ -139,10 +140,85 @@ function makeInitialForm(settings) {
 }
 
 /**
+ * OAuth 登入狀態區塊（openai-oauth provider 專用）
+ */
+function OAuthStatusBlock({ oauthStatus, oauthPolling, onLogin, onLogout }) {
+  const oauthBlockStyle = {
+    background: 'var(--color-bg-surface)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 6,
+    padding: '14px 16px',
+    marginBottom: 18,
+  };
+  const oauthTitleStyle = {
+    fontSize: 11,
+    fontWeight: 700,
+    color: 'var(--color-text-muted)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    marginBottom: 10,
+  };
+  const statusRowStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+    fontSize: 13,
+  };
+  const dotStyle = (loggedIn) => ({
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    background: loggedIn ? 'var(--color-success)' : 'var(--color-text-muted)',
+    flexShrink: 0,
+  });
+
+  const loggedIn = oauthStatus?.loggedIn;
+  const accountId = oauthStatus?.accountId;
+  const expires = oauthStatus?.expires;
+
+  return (
+    <div style={oauthBlockStyle}>
+      <div style={oauthTitleStyle}>OpenAI OAuth</div>
+      <div style={statusRowStyle}>
+        <span style={dotStyle(loggedIn)} />
+        {loggedIn
+          ? <span>已登入{accountId ? <span style={{ color: 'var(--color-text-muted)' }}>：帳號 ...{accountId.slice(-6)}</span> : null}</span>
+          : <span style={{ color: 'var(--color-text-muted)' }}>未登入</span>
+        }
+      </div>
+      {loggedIn && expires && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 10 }}>
+          Token 到期：{new Date(expires).toLocaleDateString('zh-TW')}
+        </div>
+      )}
+      {oauthPolling && (
+        <div style={{ fontSize: 12, color: 'var(--color-accent)', marginBottom: 10 }}>
+          請在瀏覽器完成授權...
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        {!loggedIn && (
+          <button style={btnPrimary} onClick={onLogin} disabled={oauthPolling}>
+            {oauthPolling ? '等待授權中...' : '使用 OpenAI 帳號登入'}
+          </button>
+        )}
+        {loggedIn && (
+          <button style={btnSecondary} onClick={onLogout}>
+            登出
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * LLM 設定內容區塊
  */
 function LLMSettingsContent() {
-  const { llmSettings, loading, saveLLM, testLLM, testResult, testing } = useSettings();
+  const { llmSettings, loading, saveLLM, testLLM, testResult, testing,
+          oauthStatus, oauthPolling, triggerOAuthLogin, logoutOAuth } = useSettings();
 
   const [form, setForm] = useState(makeInitialForm(null));
   const [modelList, setModelList] = useState([]);
@@ -182,9 +258,9 @@ function LLMSettingsContent() {
     try {
       await saveLLM({
         provider: form.provider,
-        apiKey: form.apiKey,
-        baseUrl: form.baseUrl || null,
-        model: form.model,
+        apiKey:   form.provider === 'openai-oauth' ? '' : form.apiKey,
+        model:    form.provider === 'openai-oauth' ? 'gpt-5.2' : form.model,
+        baseUrl:  form.baseUrl || null,
         maxTokens: parseInt(form.maxTokens) || 4096,
         temperature: parseFloat(form.temperature) || 0.7,
         requestsPerMinute: parseInt(form.requestsPerMinute) || 0,
@@ -233,17 +309,28 @@ function LLMSettingsContent() {
               </select>
             </div>
 
-            <div style={fieldGroup}>
-              <label style={labelStyle}>API Key</label>
-              <input
-                style={inputStyle}
-                type="password"
-                value={form.apiKey}
-                onChange={set('apiKey')}
-                placeholder={isUnset ? '未設定' : '輸入新的 API Key（留空保留現有）'}
-                autoComplete="off"
+            {form.provider !== 'openai-oauth' && (
+              <div style={fieldGroup}>
+                <label style={labelStyle}>API Key</label>
+                <input
+                  style={inputStyle}
+                  type="password"
+                  value={form.apiKey}
+                  onChange={set('apiKey')}
+                  placeholder={isUnset ? '未設定' : '輸入新的 API Key（留空保留現有）'}
+                  autoComplete="off"
+                />
+              </div>
+            )}
+
+            {form.provider === 'openai-oauth' && (
+              <OAuthStatusBlock
+                oauthStatus={oauthStatus}
+                oauthPolling={oauthPolling}
+                onLogin={triggerOAuthLogin}
+                onLogout={logoutOAuth}
               />
-            </div>
+            )}
 
             {form.provider === 'openai-compatible' && (
               <div style={fieldGroup}>
@@ -258,32 +345,43 @@ function LLMSettingsContent() {
               </div>
             )}
 
-            <div style={{ ...fieldGroup, ...rowStyle }}>
-              <div style={{ flex: 1 }}>
+            {form.provider === 'openai-oauth' ? (
+              <div style={fieldGroup}>
                 <label style={labelStyle}>Model</label>
-                {modelList.length > 0 ? (
-                  <select style={selectStyle} value={form.model} onChange={set('model')}>
-                    <option value="">-- 選擇模型 --</option>
-                    {modelList.map(m => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    style={inputStyle}
-                    type="text"
-                    value={form.model}
-                    onChange={set('model')}
-                    placeholder="例如：gpt-4o-mini"
-                  />
-                )}
+                <input
+                  style={{ ...inputStyle, color: 'var(--color-text-muted)' }}
+                  value="gpt-5.2"
+                  readOnly
+                />
               </div>
-              <div style={{ flexShrink: 0, paddingBottom: 0 }}>
-                <button style={btnSecondary} onClick={handleTest} disabled={testing || !form.apiKey}>
-                  {testing ? '驗證中...' : '驗證並取得模型列表'}
-                </button>
+            ) : (
+              <div style={{ ...fieldGroup, ...rowStyle }}>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}>Model</label>
+                  {modelList.length > 0 ? (
+                    <select style={selectStyle} value={form.model} onChange={set('model')}>
+                      <option value="">-- 選擇模型 --</option>
+                      {modelList.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      style={inputStyle}
+                      type="text"
+                      value={form.model}
+                      onChange={set('model')}
+                      placeholder="例如：gpt-4o-mini"
+                    />
+                  )}
+                </div>
+                <div style={{ flexShrink: 0, paddingBottom: 0 }}>
+                  <button style={btnSecondary} onClick={handleTest} disabled={testing || (form.provider !== 'openai-oauth' && !form.apiKey)}>
+                    {testing ? '驗證中...' : '驗證並取得模型列表'}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             <div style={{ marginBottom: 12 }}>
               <ValidationStatus

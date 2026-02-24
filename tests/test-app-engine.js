@@ -176,6 +176,50 @@ describe('AppEngine', () => {
     await engine.stop();
   });
 
+  it('getOAuthStatus() 在 _oauthClient 為 null 時應回傳 {loggedIn: false}', () => {
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    // _oauthClient starts as null (engine not started)
+    const status = engine.getOAuthStatus();
+    assert.deepEqual(status, { loggedIn: false });
+  });
+
+  it('startOAuthLogin() 應防止重複觸發（回傳同一 Promise）', async () => {
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    let resolveLogin;
+    const loginPromise = new Promise((res) => { resolveLogin = res; });
+    // Inject a mock oauthClient
+    engine._oauthClient = {
+      login: () => loginPromise,
+    };
+    const p1 = engine.startOAuthLogin();
+    const p2 = engine.startOAuthLogin();
+    assert.strictEqual(p1, p2, 'second call should return same promise');
+    resolveLogin({ accountId: 'test' });
+    await p1;
+    // After resolution, promise should be cleared
+    const p3 = engine.startOAuthLogin();
+    assert.notStrictEqual(p1, p3, 'after completion, new call should return new promise');
+    resolveLogin({ accountId: 'test' });
+    await p3;
+  });
+
+  it('logoutOAuth() 應清除 llmService（providerName=openai-oauth）', async () => {
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    // Inject mock oauthClient and llmService
+    engine._oauthClient = { logout: async () => {} };
+    engine._llmService = { providerName: 'openai-oauth' };
+    await engine.logoutOAuth();
+    assert.equal(engine._llmService, null, 'llmService should be cleared after logout');
+  });
+
+  it('logoutOAuth() 不應清除非 openai-oauth 的 llmService', async () => {
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    engine._oauthClient = { logout: async () => {} };
+    engine._llmService = { providerName: 'openai' };
+    await engine.logoutOAuth();
+    assert.notEqual(engine._llmService, null, 'non-oauth llmService should not be cleared');
+  });
+
   it('stop() 應能從 paused 狀態執行', async () => {
     writeConfig();
     const engine = new AppEngine({ configPath: CONFIG_PATH });

@@ -129,6 +129,7 @@ function createMockEngine() {
   };
 
   let llmSettingsStore = null;
+  let oauthLoggedIn = false;
 
   return {
     getState: () => 'running',
@@ -138,9 +139,13 @@ function createMockEngine() {
     getDB: () => db,
     getLLMSettings: () => llmSettingsStore,
     setLLMSettings: (data) => { llmSettingsStore = data; },
+    getOAuthStatus: () => ({ loggedIn: oauthLoggedIn }),
+    startOAuthLogin: () => {},
+    logoutOAuth: async () => { oauthLoggedIn = false; },
     _mgr: mgr,
     _schedulerActions: schedulerActions,
     _db: db,
+    _setOAuthLoggedIn: (v) => { oauthLoggedIn = v; },
   };
 }
 
@@ -321,6 +326,41 @@ describe('ApiServer', () => {
     // The handler must have used the actual key from DB, not the masked string.
     // Result may be valid:false (invalid fake key), but NOT the "missing apiKey" error.
     assert.notEqual(res.body.error, 'provider and apiKey are required');
+  });
+
+  it('GET /api/settings/llm/oauth/status 應回傳登入狀態', async () => {
+    const res = await makeRequest(port, 'GET', '/api/settings/llm/oauth/status');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.loggedIn, false);
+  });
+
+  it('POST /api/settings/llm/oauth/login 應回傳 pending', async () => {
+    const res = await makeRequest(port, 'POST', '/api/settings/llm/oauth/login');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.status, 'pending');
+  });
+
+  it('DELETE /api/settings/llm/oauth/logout 應回傳 ok', async () => {
+    const res = await makeRequest(port, 'DELETE', '/api/settings/llm/oauth/logout');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+  });
+
+  it('POST /api/settings/llm/test provider=openai-oauth 未登入應回傳 valid:false', async () => {
+    engine._setOAuthLoggedIn(false);
+    const res = await makeRequest(port, 'POST', '/api/settings/llm/test', { provider: 'openai-oauth' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.valid, false);
+    assert.equal(res.body.error, '尚未登入 OpenAI OAuth');
+  });
+
+  it('POST /api/settings/llm/test provider=openai-oauth 已登入應回傳 valid:true', async () => {
+    engine._setOAuthLoggedIn(true);
+    const res = await makeRequest(port, 'POST', '/api/settings/llm/test', { provider: 'openai-oauth' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.valid, true);
+    assert.deepEqual(res.body.models, ['gpt-5.2']);
+    engine._setOAuthLoggedIn(false);
   });
 });
 

@@ -42,16 +42,29 @@ class OpenAIProvider extends BaseLLMProvider {
       requestOptions.response_format = { type: 'json_object' };
     }
 
-    const response = await this.client.chat.completions.create(requestOptions);
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('LLM returned empty response (content filtered or null)');
+    const stream = await this.client.chat.completions.create({
+      ...requestOptions,
+      stream: true,
+      stream_options: { include_usage: true },
+    });
+
+    let text = '';
+    let usage = null;
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content ?? '';
+      if (delta) {
+        text += delta;
+        options.onChunk?.(delta);
+      }
+      if (chunk.usage) {
+        usage = {
+          promptTokens: chunk.usage.prompt_tokens,
+          completionTokens: chunk.usage.completion_tokens,
+        };
+      }
     }
-    const usage = response.usage ? {
-      promptTokens: response.usage.prompt_tokens,
-      completionTokens: response.usage.completion_tokens,
-    } : null;
-    return { text: content, usage };
+    return { text, usage };
   }
 }
 

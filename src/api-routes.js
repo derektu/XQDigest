@@ -289,10 +289,40 @@ function createRoutes(engine) {
       },
     },
     {
+      method: 'GET',
+      pattern: '/api/settings/llm/oauth/status',
+      handler: () => {
+        return { data: engine.getOAuthStatus?.() || { loggedIn: false } };
+      },
+    },
+    {
+      method: 'POST',
+      pattern: '/api/settings/llm/oauth/login',
+      handler: () => {
+        engine.startOAuthLogin?.();   // 背景執行，不 await
+        return { data: { status: 'pending' } };
+      },
+    },
+    {
+      method: 'DELETE',
+      pattern: '/api/settings/llm/oauth/logout',
+      handler: async () => {
+        await engine.logoutOAuth?.();
+        return { data: { ok: true } };
+      },
+    },
+    {
       method: 'POST',
       pattern: '/api/settings/llm/test',
       handler: async (_params, body) => {
         const { provider, apiKey, baseUrl } = body || {};
+        if (provider === 'openai-oauth') {
+          const status = engine.getOAuthStatus?.();
+          if (!status?.loggedIn) {
+            return { data: { valid: false, error: '尚未登入 OpenAI OAuth' } };
+          }
+          return { data: { valid: true, models: ['gpt-5.2'] } };
+        }
         // If apiKey is masked (starts with ****), fall back to the stored actual key
         let actualApiKey = apiKey;
         if (apiKey && apiKey.startsWith('****')) {

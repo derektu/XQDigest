@@ -88,6 +88,51 @@ describe('OpenAIProvider', () => {
   });
 });
 
+describe('OpenAIProvider streaming', () => {
+  it('chatCompletion() 應累積所有 delta 回傳完整 text', async () => {
+    const provider = new OpenAIProvider({ apiKey: 'fake', model: 'gpt-4o-mini' }, logger);
+    provider.client.chat.completions.create = async () => (async function*() {
+      yield { choices: [{ delta: { content: 'hello ' } }] };
+      yield { choices: [{ delta: { content: 'world' } }] };
+      yield { choices: [{ delta: {} }], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    })();
+    const { text } = await provider.chatCompletion([{ role: 'user', content: 'hi' }]);
+    assert.equal(text, 'hello world');
+  });
+
+  it('chatCompletion() onChunk 應在每個 delta 呼叫一次', async () => {
+    const provider = new OpenAIProvider({ apiKey: 'fake', model: 'gpt-4o-mini' }, logger);
+    provider.client.chat.completions.create = async () => (async function*() {
+      yield { choices: [{ delta: { content: 'hello ' } }] };
+      yield { choices: [{ delta: { content: 'world' } }] };
+      yield { choices: [{ delta: {} }], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    })();
+    const chunks = [];
+    await provider.chatCompletion([{ role: 'user', content: 'hi' }], { onChunk: (d) => chunks.push(d) });
+    assert.deepEqual(chunks, ['hello ', 'world']);
+  });
+
+  it('chatCompletion() 無 onChunk 仍正確回傳 text', async () => {
+    const provider = new OpenAIProvider({ apiKey: 'fake', model: 'gpt-4o-mini' }, logger);
+    provider.client.chat.completions.create = async () => (async function*() {
+      yield { choices: [{ delta: { content: 'result' } }] };
+      yield { choices: [{ delta: {} }], usage: null };
+    })();
+    const { text } = await provider.chatCompletion([{ role: 'user', content: 'hi' }]);
+    assert.equal(text, 'result');
+  });
+
+  it('chatCompletion() usage 應從最後 chunk 正確取得', async () => {
+    const provider = new OpenAIProvider({ apiKey: 'fake', model: 'gpt-4o-mini' }, logger);
+    provider.client.chat.completions.create = async () => (async function*() {
+      yield { choices: [{ delta: { content: 'ok' } }] };
+      yield { choices: [{ delta: {} }], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    })();
+    const { usage } = await provider.chatCompletion([{ role: 'user', content: 'hi' }]);
+    assert.deepEqual(usage, { promptTokens: 10, completionTokens: 5 });
+  });
+});
+
 describe('GeminiProvider', () => {
   it('應繼承 BaseLLMProvider', () => {
     const provider = new GeminiProvider({ apiKey: 'fake', model: 'gemini-pro', systemPrompt: '' }, logger);
@@ -98,6 +143,65 @@ describe('GeminiProvider', () => {
     const provider = new GeminiProvider({ apiKey: 'fake', model: 'gemini-2.0-flash', systemPrompt: 'test' }, logger);
     assert.equal(provider.model, 'gemini-2.0-flash');
     assert.equal(provider.systemPrompt, 'test');
+  });
+
+  it('chatCompletion() 應累積所有 delta 回傳完整 text', async () => {
+    const provider = new GeminiProvider({ apiKey: 'fake', model: 'gemini-pro' }, logger);
+    provider.genAI.getGenerativeModel = () => ({
+      generateContentStream: async () => ({
+        stream: (async function*() {
+          yield { text: () => 'hello ' };
+          yield { text: () => 'world' };
+        })(),
+        response: Promise.resolve({ usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 4 } }),
+      }),
+    });
+    const { text } = await provider.chatCompletion([{ role: 'user', content: 'hi' }]);
+    assert.equal(text, 'hello world');
+  });
+
+  it('chatCompletion() onChunk 應在每個 delta 呼叫一次', async () => {
+    const provider = new GeminiProvider({ apiKey: 'fake', model: 'gemini-pro' }, logger);
+    provider.genAI.getGenerativeModel = () => ({
+      generateContentStream: async () => ({
+        stream: (async function*() {
+          yield { text: () => 'hello ' };
+          yield { text: () => 'world' };
+        })(),
+        response: Promise.resolve({ usageMetadata: null }),
+      }),
+    });
+    const chunks = [];
+    await provider.chatCompletion([{ role: 'user', content: 'hi' }], { onChunk: (d) => chunks.push(d) });
+    assert.deepEqual(chunks, ['hello ', 'world']);
+  });
+
+  it('chatCompletion() 無 onChunk 仍正確回傳 text', async () => {
+    const provider = new GeminiProvider({ apiKey: 'fake', model: 'gemini-pro' }, logger);
+    provider.genAI.getGenerativeModel = () => ({
+      generateContentStream: async () => ({
+        stream: (async function*() {
+          yield { text: () => 'result' };
+        })(),
+        response: Promise.resolve({ usageMetadata: null }),
+      }),
+    });
+    const { text } = await provider.chatCompletion([{ role: 'user', content: 'hi' }]);
+    assert.equal(text, 'result');
+  });
+
+  it('chatCompletion() usage 應從 response 正確取得', async () => {
+    const provider = new GeminiProvider({ apiKey: 'fake', model: 'gemini-pro' }, logger);
+    provider.genAI.getGenerativeModel = () => ({
+      generateContentStream: async () => ({
+        stream: (async function*() {
+          yield { text: () => 'ok' };
+        })(),
+        response: Promise.resolve({ usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 4 } }),
+      }),
+    });
+    const { usage } = await provider.chatCompletion([{ role: 'user', content: 'hi' }]);
+    assert.deepEqual(usage, { promptTokens: 8, completionTokens: 4 });
   });
 });
 

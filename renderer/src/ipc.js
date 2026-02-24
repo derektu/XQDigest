@@ -41,9 +41,12 @@ export const content = {
 };
 
 export const settings = {
-  getLLM:    ()       => _request('GET',  '/api/settings/llm'),
-  updateLLM: (data)   => _request('PUT',  '/api/settings/llm', data),
-  testLLM:   (params) => _request('POST', '/api/settings/llm/test', params),
+  getLLM:         ()     => _request('GET',    '/api/settings/llm'),
+  updateLLM:      (data) => _request('PUT',    '/api/settings/llm', data),
+  testLLM:        (p)    => _request('POST',   '/api/settings/llm/test', p),
+  getOAuthStatus: ()     => _request('GET',    '/api/settings/llm/oauth/status'),
+  loginOAuth:     ()     => _request('POST',   '/api/settings/llm/oauth/login'),
+  logoutOAuth:    ()     => _request('DELETE', '/api/settings/llm/oauth/logout'),
 };
 
 export const app = {

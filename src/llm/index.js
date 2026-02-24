@@ -9,7 +9,7 @@ const DEFAULT_SUMMARIZE_PROMPT = `你是一個專業的財經內容摘要助手�
 關鍵要點（3-5 條，每條以「• 」開頭）：列出最重要的資訊、數據或觀點。`;
 
 class LLMServiceConfig {
-  constructor({ provider, apiKey, model, maxTokens = 1000, temperature = 0.7, baseUrl, systemPrompt = '', summarizationPrompt } = {}) {
+  constructor({ provider, apiKey, model, maxTokens = 1000, temperature = 0.7, baseUrl, systemPrompt = '', summarizationPrompt, oauthClient } = {}) {
     this.provider = provider;
     this.apiKey = apiKey;
     this.model = model;
@@ -18,6 +18,7 @@ class LLMServiceConfig {
     this.baseUrl = baseUrl;
     this.systemPrompt = systemPrompt;
     this.summarizationPrompt = summarizationPrompt;
+    this.oauthClient = oauthClient || null;
   }
 }
 
@@ -38,6 +39,11 @@ class LLMService {
         return new OpenAIProvider(config, logger);
       case 'gemini':
         return new GeminiProvider(config, logger);
+      case 'openai-oauth': {
+        const { OpenAIOAuthProvider } = require('./openai-oauth');
+        if (!config.oauthClient) throw new Error('openai-oauth requires oauthClient');
+        return new OpenAIOAuthProvider(config.oauthClient, logger);
+      }
       default:
         throw new Error(`Unknown LLM provider: ${config.provider}`);
     }

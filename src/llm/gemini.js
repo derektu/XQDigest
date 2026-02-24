@@ -40,13 +40,27 @@ class GeminiProvider extends BaseLLMProvider {
       parts: [{ text: msg.content }],
     }));
 
-    const result = await model.generateContent({ contents });
-    const text = result.response.text();
-    const meta = result.response.usageMetadata;
-    const usage = meta ? {
-      promptTokens: meta.promptTokenCount,
-      completionTokens: meta.candidatesTokenCount,
-    } : null;
+    const result = await model.generateContentStream({ contents });
+
+    let text = '';
+    let usage = null;
+
+    for await (const chunk of result.stream) {
+      const delta = chunk.text();
+      if (delta) {
+        text += delta;
+        options.onChunk?.(delta);
+      }
+    }
+
+    const response = await result.response;
+    const meta = response.usageMetadata;
+    if (meta) {
+      usage = {
+        promptTokens: meta.promptTokenCount,
+        completionTokens: meta.candidatesTokenCount,
+      };
+    }
     return { text, usage };
   }
 }

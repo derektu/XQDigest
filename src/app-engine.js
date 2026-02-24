@@ -57,6 +57,8 @@ class AppEngine extends EventEmitter {
     this._scheduler = null;
     this._llmService = null;
     this._apiServer = null;
+    this._oauthClient = null;
+    this._oauthLoginPromise = null;
   }
 
   getState() {
@@ -102,10 +104,39 @@ class AppEngine extends EventEmitter {
     return new LLMServiceConfig({ ...data, summarizationPrompt });
   }
 
+  getOAuthStatus() {
+    return this._oauthClient?.getStatus() || { loggedIn: false };
+  }
+
+  startOAuthLogin() {
+    if (!this._oauthClient) return;
+    if (this._oauthLoginPromise) return this._oauthLoginPromise;
+    this._oauthLoginPromise = this._oauthClient.login().finally(() => {
+      this._oauthLoginPromise = null;
+    });
+    return this._oauthLoginPromise;
+  }
+
+  async logoutOAuth() {
+    await this._oauthClient?.logout();
+    if (this._llmService && this._llmService.providerName === 'openai-oauth') {
+      this._llmService = null;
+      if (this._scheduler) this._scheduler.updateLLMService(null);
+    }
+  }
+
   setLLMSettings(data) {
     if (!this._db) throw new Error('Engine not running');
     this._db.setAppSetting('llm', data);
     // Re-initialize LLM service
+    if (data && data.provider === 'openai-oauth') {
+      const cfg = this._buildLLMConfig({ ...data, oauthClient: this._oauthClient });
+      this._llmService = new LLMService(cfg, null, this._llmLogger);
+      if (this._scheduler) this._scheduler.updateLLMService(this._llmService);
+      if (this._llmQueue) this._llmQueue.updateRateLimit(data.requestsPerMinute || 0);
+      if (this._logger) this._logger.info('LLM provider switched to openai-oauth');
+      return;
+    }
     if (data && data.apiKey) {
       this._llmService = new LLMService(this._buildLLMConfig(data), null, this._llmLogger);
       if (this._scheduler) this._scheduler.updateLLMService(this._llmService);
@@ -192,6 +223,26 @@ class AppEngine extends EventEmitter {
         this._logger.info(`LLM configured: ${llmSettings.provider} / ${llmSettings.model}`);
       } else {
         this._logger.warn('No LLM API key configured, summaries will be skipped');
+      }
+
+      // 9.5. Init OAuthClient with DB storage
+      const { OAuthClient } = require('./llm/openai-oauth-client');
+      const dbStorage = {
+        load:   () => this._db.getAppSetting('openai_oauth_tokens'),
+        save:   (tokens) => this._db.setAppSetting('openai_oauth_tokens', tokens),
+        delete: () => this._db.setAppSetting('openai_oauth_tokens', null),
+      };
+      this._oauthClient = new OAuthClient({
+        storage: dbStorage,
+        openBrowser: this._resolveOpenBrowser(),
+      });
+
+      // 9.6. 若上次儲存的 provider 為 openai-oauth，此時才能初始化 LLMService
+      //       （step 9 的 apiKey 檢查無法涵蓋此 case）
+      if (llmSettings?.provider === 'openai-oauth') {
+        const cfg = this._buildLLMConfig({ ...llmSettings, oauthClient: this._oauthClient });
+        this._llmService = new LLMService(cfg, null, this._llmLogger);
+        this._logger.info('LLM configured: openai-oauth');
       }
 
       // 10. Init LLM queue
@@ -292,6 +343,8 @@ class AppEngine extends EventEmitter {
     this._scheduler = null;
     this._llmService = null;
     this._apiServer = null;
+    this._oauthClient = null;
+    this._oauthLoginPromise = null;
   }
 
   pause() {
@@ -363,6 +416,8 @@ class AppEngine extends EventEmitter {
       this._scheduler = null;
       this._llmService = null;
       this._apiServer = null;
+      this._oauthClient = null;
+      this._oauthLoginPromise = null;
 
       this._setState(STATES.STOPPED);
     } catch (err) {
@@ -378,6 +433,21 @@ class AppEngine extends EventEmitter {
     if (oldState !== newState) {
       this.emit('stateChange', newState, oldState);
     }
+  }
+
+  _resolveOpenBrowser() {
+    try {
+      const { shell } = require('electron');
+      if (typeof shell?.openExternal === 'function') {
+        return (url) => shell.openExternal(url);
+      }
+    } catch {
+      // not in electron context
+    }
+    return async (url) => {
+      const { default: open } = await import('open');
+      open(url);
+    };
   }
 
   _setupConfigListeners() {

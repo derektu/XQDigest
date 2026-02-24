@@ -25,6 +25,7 @@ class BaseLLMProvider {
    * @param {Array<{role: string, content: string}>} messages - Chat messages
    * @param {Object} [options]
    * @param {string} [options.responseFormat] - 'json' | 'text' (default: 'text')
+   * @param {Function} [options.onChunk] - Optional streaming callback, called with each text delta
    * @returns {Promise<{text: string, usage: {promptTokens: number, completionTokens: number} | null}>}
    */
   async chatCompletion(messages, options = {}) {

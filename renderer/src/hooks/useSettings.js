@@ -7,6 +7,8 @@ export default function useSettings() {
   const [error, setError] = useState(null);
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
+  const [oauthStatus, setOauthStatus] = useState(null);  // {loggedIn, accountId, expires} | null
+  const [oauthPolling, setOauthPolling] = useState(false);
 
   const fetchLLM = useCallback(async () => {
     setLoading(true);
@@ -43,5 +45,47 @@ export default function useSettings() {
     }
   }, []);
 
-  return { llmSettings, loading, error, saveLLM, testLLM, testResult, testing };
+  const fetchOAuthStatus = useCallback(async () => {
+    try {
+      const data = await settingsIpc.getOAuthStatus();
+      setOauthStatus(data);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchOAuthStatus(); }, [fetchOAuthStatus]);
+
+  const triggerOAuthLogin = useCallback(async () => {
+    await settingsIpc.loginOAuth();
+    setOauthPolling(true);
+  }, []);
+
+  useEffect(() => {
+    if (!oauthPolling) return;
+    let attempts = 0;
+    const MAX = 150; // 150 * 2s = 300s
+    const id = setInterval(async () => {
+      attempts++;
+      try {
+        const data = await settingsIpc.getOAuthStatus();
+        setOauthStatus(data);
+        if (data.loggedIn) {
+          setOauthPolling(false);
+          clearInterval(id);
+        }
+      } catch { /* ignore */ }
+      if (attempts >= MAX) {
+        setOauthPolling(false);
+        clearInterval(id);
+      }
+    }, 2000);
+    return () => clearInterval(id);
+  }, [oauthPolling]);
+
+  const logoutOAuth = useCallback(async () => {
+    await settingsIpc.logoutOAuth();
+    await fetchOAuthStatus();
+  }, [fetchOAuthStatus]);
+
+  return { llmSettings, loading, error, saveLLM, testLLM, testResult, testing,
+           oauthStatus, oauthPolling, triggerOAuthLogin, logoutOAuth };
 }

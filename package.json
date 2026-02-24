@@ -22,6 +22,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "axios": "^1.7.0",
+    "open": "^10.2.0",
     "better-sqlite3": "^12.6.2",
     "chokidar": "^3.6.0",
     "electron-updater": "^6.8.3",

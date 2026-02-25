@@ -5,11 +5,11 @@
  *   node scripts/download-transcripts.js [options]
  *
  * Options:
- *   --csv <path>     CSV file path (default: config/ytchannel.csv)
+ *   --csv <path>     CSV file path (default: yt-transcript/ytchannel.csv)
  *   --ids <ids>      Only process specified channel IDs (comma-separated, e.g. E01,C07)
  *   --days <N>       Only download videos from last N days (default: 30)
  *   --max <M>        Max videos per channel (default: 10)
- *   --output <dir>   Output directory (default: ./transcripts)
+ *   --output <dir>   Output directory (default: ./yt-transcript)
  *   --delay <ms>     Delay between downloads in ms (default: 2000)
  *   --help           Show help
  */
@@ -28,11 +28,11 @@ function showHelp() {
 Usage: node scripts/download-transcripts.js [options]
 
 Options:
-  --csv <path>     CSV file path (default: config/ytchannel.csv)
+  --csv <path>     CSV file path (default: yt-transcript/ytchannel.csv)
   --ids <ids>      Only process specified channel IDs (comma-separated, e.g. E01,C07)
   --days <N>       Only download videos from last N days (default: 30)
   --max <M>        Max videos per channel (default: 10)
-  --output <dir>   Output directory (default: ./transcripts)
+  --output <dir>   Output directory (default: ./yt-transcript)
   --delay <ms>     Delay between downloads in ms (default: 2000)
   --help           Show help
 `);
@@ -86,11 +86,11 @@ function formatMarkdown(channel, video, transcript) {
 async function main() {
   const { values } = parseArgs({
     options: {
-      csv:    { type: 'string',  default: 'config/ytchannel.csv' },
+      csv:    { type: 'string',  default: 'yt-transcript/ytchannel.csv' },
       ids:    { type: 'string' },
       days:   { type: 'string',  default: '30' },
       max:    { type: 'string',  default: '10' },
-      output: { type: 'string',  default: './transcripts' },
+      output: { type: 'string',  default: './yt-transcript' },
       delay:  { type: 'string',  default: '2000' },
       help:   { type: 'boolean', default: false },
     },

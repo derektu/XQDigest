@@ -7,6 +7,7 @@ logs/
 # User-specific config (contains API keys)
 config/settings.json
 config/settings.json.backup
+config/ytchannel.csv
 
 # Claude Code local state
 .claude/
@@ -29,5 +30,5 @@ tests/_tmp_*/
 # output of test runs
 output/
 
-# youtube transcript data
-transcripts/
+# youtube transcript study
+yt-transcript/

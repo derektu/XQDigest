@@ -1,0 +1,8 @@
+# YouTube 頻道清單範本
+# 欄位：id,name,url
+# id   - 自訂識別碼，可用於 --ids 過濾（如 E01,C07）
+# name - 頻道顯示名稱（僅用於輸出顯示）
+# url  - YouTube 頻道 URL（/@handle 或 /channel/UCxxx 格式）
+id,name,url
+E01,娜娜說美股,https://www.youtube.com/@NaNaShuoMeiGu
+C01,Bloomberg Technology,https://www.youtube.com/@BloombergTechnology

@@ -40,7 +40,7 @@ function mockDataSourceManager(sources = []) {
 }
 function mockYT(videos = []) {
   return {
-    fetchRecentVideos: async () => videos,
+    fetchRecentVideosCombined: async () => videos,
     fetchTranscript: async (id) => `Transcript for ${id}`,
   };
 }
@@ -209,7 +209,7 @@ describe('Scheduler', () => {
     let transcriptCalled = false;
 
     const ytMock = {
-      fetchRecentVideos: async () => [
+      fetchRecentVideosCombined: async () => [
         { videoId: 'yt-001', title: 'YT Video', publishedDate: '2026-02-11', url: 'https://youtube.com/watch?v=yt-001', author: 'Ch' },
       ],
       fetchTranscript: async (id) => { transcriptCalled = true; return `Transcript for ${id}`; },
@@ -610,7 +610,7 @@ describe('Scheduler', () => {
     queue.on('taskFailed', (task) => failed.push(task.id));
 
     const ytMock = {
-      fetchRecentVideos: async () => [
+      fetchRecentVideosCombined: async () => [
         { videoId: 'nosub-1', title: 'No Sub', publishedDate: '2026-02-11', url: 'https://youtube.com/watch?v=nosub-1', author: 'Ch' },
       ],
       fetchTranscript: async () => { throw new PermanentError('no subtitles found'); },
@@ -643,7 +643,7 @@ describe('Scheduler', () => {
     const queue = new DownloadQueue({ concurrentLimit: 3, retryAttempts: 0 });
 
     const ytMock = {
-      fetchRecentVideos: async () => [
+      fetchRecentVideosCombined: async () => [
         { videoId: 'perm-info-1', title: 'Perm Fail', publishedDate: '2026-02-11', url: 'https://youtube.com/watch?v=perm-info-1', author: 'Ch' },
       ],
       fetchTranscript: async () => { throw new PermanentError('no subtitles found for perm-info-1'); },

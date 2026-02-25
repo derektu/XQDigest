@@ -22,7 +22,7 @@ class PermanentError extends Error {
 const TRANSCRIPT_LANG_PRIORITY = ['zh-TW', 'zh-Hant', 'zh-Hans', 'zh-CN', 'en'];
 
 class YouTubeFetcher {
-  static CHANNEL_URL_PATTERN = /^https?:\/\/(?:www\.)?youtube\.com\/(?:@[\w.-]+|channel\/UC[\w-]+|c\/[\w.-]+)\/?$/;
+  static CHANNEL_URL_PATTERN = /^https?:\/\/(?:www\.)?youtube\.com\/(?:@(?:[\w.-]|%[0-9A-Fa-f]{2})+|channel\/UC[\w-]+|c\/[\w.-]+)\/?$/;
 
   static validateChannelUrl(url) {
     return YouTubeFetcher.CHANNEL_URL_PATTERN.test(url);
@@ -53,13 +53,110 @@ class YouTubeFetcher {
     const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
     const feed = await this._rssParser.parseURL(feedUrl);
 
-    return feed.items.map(item => ({
+    const items = feed.items.map(item => ({
       videoId: this._extractVideoId(item.link),
       title: item.title,
       publishedDate: item.pubDate || item.isoDate,
       url: item.link,
       author: feed.title,
     }));
+    return items.filter(v => !this._isShorts(v));
+  }
+
+  /**
+   * Fetch recent videos from a YouTube channel using yt-dlp.
+   * Uses the /videos tab which naturally excludes Shorts.
+   * More accurate than RSS for channels that post many Shorts,
+   * at the cost of being slower (~1-2s per video fetched).
+   * @param {string} channelUrl - YouTube channel URL
+   * @param {number} maxFetch - Max videos to retrieve (processed newest-first)
+   * @returns {Array<{videoId, title, publishedDate, url, author}>}
+   */
+  fetchRecentVideosByYtDlp(channelUrl, maxFetch = 30) {
+    // Strip trailing /videos if present, then append cleanly
+    const videosUrl = channelUrl.replace(/\/videos\/?$/, '').replace(/\/?$/, '/videos');
+    const args = [
+      '--no-warnings', '--ignore-errors', '--skip-download', '--dump-json',
+      '--playlist-end', String(maxFetch),
+      videosUrl,
+    ];
+    return new Promise((resolve, reject) => {
+      execFile(this._ytDlpBin, args, { timeout: 120000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout) => {
+        const results = [];
+        for (const line of (stdout || '').split('\n')) {
+          if (!line.trim()) continue;
+          try {
+            const d = JSON.parse(line);
+            if (!d.id) continue;
+            // Skip upcoming or currently live events — no transcript available yet.
+            // 'was_live' (finished streams) are kept since they may have transcripts.
+            if (d.is_live || d.live_status === 'is_upcoming' || d.live_status === 'is_live') continue;
+            const ud = d.upload_date; // YYYYMMDD or null
+            results.push({
+              videoId: d.id,
+              title: d.title,
+              publishedDate: ud ? `${ud.slice(0, 4)}-${ud.slice(4, 6)}-${ud.slice(6, 8)}` : null,
+              url: d.webpage_url || `https://www.youtube.com/watch?v=${d.id}`,
+              author: d.channel || d.uploader,
+            });
+          } catch {}
+        }
+        if (results.length > 0) {
+          resolve(results); // 有 partial 結果就當作成功
+        } else if (err) {
+          reject(err);      // 完全沒有結果才 reject
+        } else {
+          resolve([]);
+        }
+      });
+    });
+  }
+
+  /**
+   * Fetch recent videos by combining RSS and yt-dlp results.
+   * - yt-dlp (/videos tab): primary source, excludes Shorts, up to maxFetch videos
+   * - RSS: fallback/supplement, up to 15 videos, filtered for Shorts
+   * Both run in parallel; results are unioned by videoId (yt-dlp preferred).
+   * If yt-dlp has null publishedDate for a video, RSS date is used as fallback.
+   * @param {string} channelUrl - YouTube channel URL
+   * @param {number} maxFetch - Max videos to retrieve via yt-dlp
+   * @returns {Array<{videoId, title, publishedDate, url, author}>}
+   */
+  async fetchRecentVideosCombined(channelUrl, maxFetch = 30) {
+    const [rssResult, ytdlpResult] = await Promise.allSettled([
+      this.fetchRecentVideos(channelUrl),
+      this.fetchRecentVideosByYtDlp(channelUrl, maxFetch),
+    ]);
+
+    const rssVideos = rssResult.status === 'fulfilled' ? rssResult.value : [];
+    const ytdlpVideos = ytdlpResult.status === 'fulfilled' ? ytdlpResult.value : [];
+
+    // RSS lookup for date fallback
+    const rssMap = new Map(rssVideos.map(v => [v.videoId, v]));
+
+    // yt-dlp results (primary): supplement null publishedDate from RSS
+    const ytdlpProcessed = ytdlpVideos.map(v => ({
+      ...v,
+      publishedDate: v.publishedDate ?? rssMap.get(v.videoId)?.publishedDate ?? null,
+    }));
+
+    // RSS-only videos (not in yt-dlp): filter Shorts
+    const ytdlpIds = new Set(ytdlpVideos.map(v => v.videoId));
+    const rssOnly = rssVideos
+      .filter(v => !ytdlpIds.has(v.videoId))
+      .filter(v => !this._isShorts(v));
+
+    return [...ytdlpProcessed, ...rssOnly];
+  }
+
+  /**
+   * Detect if a video is a YouTube Short.
+   * Checks URL for /shorts/ path or title for #Shorts hashtag.
+   */
+  _isShorts(video) {
+    if (video.url && video.url.includes('/shorts/')) return true;
+    if (video.title && /#shorts\b/i.test(video.title)) return true;
+    return false;
   }
 
   /**
@@ -107,7 +204,14 @@ class YouTubeFetcher {
       const url = `https://www.youtube.com/watch?v=${videoId}`;
       const args = ['--dump-json', '--skip-download', '--no-warnings', '--no-progress', url];
       execFile(this._ytDlpBin, args, { timeout: 60000 }, (err, stdout) => {
-        if (err) return reject(err);
+        if (err) {
+          // Detect upcoming/active live events; throw a non-permanent error so the
+          // video ID is not permanently blocked — once the stream ends, it can be retried.
+          if (err.message?.includes('live event') || err.stderr?.includes('live event')) {
+            return reject(new Error(`live event: transcript not yet available for ${videoId}`));
+          }
+          return reject(err);
+        }
         try {
           const info = JSON.parse(stdout);
           resolve({
@@ -213,12 +317,12 @@ class YouTubeFetcher {
         timeout: 15000,
       });
       const html = resp.data;
-      // Look for channel ID in meta tag or page content
-      const match = html.match(/(?:"channelId"|"externalId"):"(UC[a-zA-Z0-9_-]+)"/);
-      if (match) return match[1];
-      // Fallback: look in canonical link
+      // Prefer canonical link — unambiguous even when multiple channelIds appear in page JSON
       const canonical = html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/channel\/(UC[a-zA-Z0-9_-]+)"/);
       if (canonical) return canonical[1];
+      // Fallback: look for channel ID in JSON embedded in page
+      const match = html.match(/(?:"channelId"|"externalId"):"(UC[a-zA-Z0-9_-]+)"/);
+      if (match) return match[1];
       return null;
     } catch (err) {
       this.logger.error(`Failed to resolve channel ID for ${channelUrl}: ${err.message}`);

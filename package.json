@@ -16,6 +16,7 @@
     "test": "npm run node:rebuild && node --test tests/test-*.js",
     "test:integration": "npm run node:rebuild && node --test tests/integration-*.js",
     "download:yt-dlp": "node scripts/download-yt-dlp.js",
+    "transcripts": "node scripts/download-transcripts.js",
     "build:mac": "npm run renderer:build && npm run electron:rebuild && electron-builder --mac",
     "build:win": "npm run renderer:build && npm run electron:rebuild && electron-builder --win"
   },

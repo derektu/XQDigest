@@ -25,3 +25,9 @@ build/bin/
 
 # Temp test directories
 tests/_tmp_*/
+
+# output of test runs
+output/
+
+# youtube transcript data
+transcripts/

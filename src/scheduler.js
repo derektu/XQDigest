@@ -275,7 +275,8 @@ class Scheduler {
   }
 
   async _fetchYouTube(source) {
-    const videos = await this.youtubeFetcher.fetchRecentVideos(source.url);
+    const maxFetch = Math.min((source.maxItems || 10) * 5, 50);
+    const videos = await this.youtubeFetcher.fetchRecentVideosCombined(source.url, maxFetch);
     const sourceId = String(source.id || source.url || source.name || 'youtube');
     return videos.map(v => ({
       itemId: v.videoId,

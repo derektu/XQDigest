@@ -16,7 +16,7 @@ const dialogStyle = {
 
 const btnRow = { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 };
 
-export default function ConfirmDialog({ title, message, onConfirm, onCancel, confirmLabel = '確認', danger = false }) {
+export default function ConfirmDialog({ title, message, onConfirm, onCancel, confirmLabel = '確認', danger = false, children }) {
   const mouseDownOnOverlay = useRef(false);
   return (
     <div
@@ -27,6 +27,7 @@ export default function ConfirmDialog({ title, message, onConfirm, onCancel, con
       <div style={dialogStyle} onMouseDown={(e) => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 12px', color: 'var(--color-text-primary)' }}>{title}</h3>
         <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: 14 }}>{message}</p>
+        {children}
         <div style={btnRow}>
           <button
             onClick={onCancel}

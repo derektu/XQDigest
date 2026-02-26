@@ -34,6 +34,7 @@ export function DataSourcesContent() {
   const [showForm, setShowForm] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteData, setDeleteData] = useState(false);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
@@ -66,8 +67,9 @@ export function DataSourcesContent() {
 
   const handleDelete = async () => {
     if (deleteTarget) {
-      await remove(deleteTarget.id);
+      await remove(deleteTarget.id, deleteData);
       setDeleteTarget(null);
+      setDeleteData(false);
     }
   };
 
@@ -169,8 +171,13 @@ export function DataSourcesContent() {
           confirmLabel="刪除"
           danger
           onConfirm={handleDelete}
-          onCancel={() => setDeleteTarget(null)}
-        />
+          onCancel={() => { setDeleteTarget(null); setDeleteData(false); }}
+        >
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, cursor: 'pointer', color: 'var(--color-text-secondary)' }}>
+            <input type="checkbox" checked={deleteData} onChange={e => setDeleteData(e.target.checked)} />
+            同時刪除此來源所有已儲存的文章
+          </label>
+        </ConfirmDialog>
       )}
     </div>
   );

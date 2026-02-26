@@ -183,6 +183,20 @@ class DB {
     return this.db.prepare(sql).run(params);
   }
 
+  getContentItemPathsBySourceId(sourceId) {
+    return this.db.prepare(
+      'SELECT markdown_file_path FROM content_items WHERE source_id = ?'
+    ).all(sourceId).map(r => r.markdown_file_path);
+  }
+
+  deleteContentItemsBySourceId(sourceId) {
+    return this.db.prepare('DELETE FROM content_items WHERE source_id = ?').run(sourceId);
+  }
+
+  deleteFailedItemsBySourceId(sourceId) {
+    return this.db.prepare('DELETE FROM failed_items WHERE source_id = ?').run(sourceId);
+  }
+
   deleteDataSource(id) {
     return this.db.prepare('DELETE FROM data_sources WHERE id = ?').run(id);
   }

@@ -18,7 +18,7 @@ export const dataSources = {
   list:     ()              => _request('GET',    '/api/datasources'),
   add:      (ds)            => _request('POST',   '/api/datasources', ds),
   update:   (id, fields)    => _request('PUT',    `/api/datasources/${id}`, fields),
-  remove:   (id)            => _request('DELETE', `/api/datasources/${id}`),
+  remove:   (id, deleteData = false) => _request('DELETE', `/api/datasources/${id}`, { deleteData }),
   toggle:   (id, enabled)   => _request('PATCH',  `/api/datasources/${id}/toggle`, { enabled }),
   validate: (type, url)     => _request('POST',   '/api/datasources/validate', { type, url }),
   checkNow: (id)            => _request('POST',   `/api/datasources/${id}/check`),

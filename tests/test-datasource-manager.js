@@ -128,6 +128,69 @@ describe('DataSourceManager', () => {
     assert.equal(mgr.getById('del'), null);
   });
 
+  it('remove() 預設不刪除 content_items', () => {
+    mgr.add({ id: 'del-keep', type: 'rss', name: 'Del Keep', url: 'http://del-keep' });
+    db.insertContentItem({
+      source_type: 'rss', source_id: 'del-keep', item_id: 'ci-keep-1',
+      title: 'T1', url: 'http://1', author: 'A',
+      published_date: '2026-01-01', fetched_date: '2026-01-01',
+      markdown_file_path: 'mock-keep.md', raw_content: null, summary: null, tags: null, status: 'fetched',
+    });
+    mgr.remove('del-keep');
+    // 資料源刪除，但 content_items 應保留
+    assert.equal(mgr.getById('del-keep'), null);
+    const items = db.getContentItems({ sourceId: 'del-keep' });
+    assert.equal(items.length, 1);
+  });
+
+  it('remove(id, { deleteData: true }) 應刪除 content_items 和 failed_items', () => {
+    mgr.add({ id: 'del-data', type: 'rss', name: 'Del Data', url: 'http://del-data' });
+    db.insertContentItem({
+      source_type: 'rss', source_id: 'del-data', item_id: 'ci-data-1',
+      title: 'T1', url: 'http://1', author: 'A',
+      published_date: '2026-01-01', fetched_date: '2026-01-01',
+      markdown_file_path: 'mock-data.md', raw_content: null, summary: null, tags: null, status: 'fetched',
+    });
+    db.insertFailedItem({
+      source_type: 'rss', source_id: 'del-data', item_id: 'fi-data-1',
+      title: 'F1', url: 'http://f1', error_message: 'err',
+    });
+    mgr.remove('del-data', { deleteData: true });
+    assert.equal(mgr.getById('del-data'), null);
+    const items = db.getContentItems({ sourceId: 'del-data' });
+    assert.equal(items.length, 0);
+    const failed = db.getFailedItems({ sourceId: 'del-data' });
+    assert.equal(failed.length, 0);
+  });
+
+  it('remove(id, { deleteData: true }) 應刪除磁碟上的 markdown 檔案', () => {
+    const mdPath = path.join(TMP_DIR, 'article.md');
+    fs.mkdirSync(TMP_DIR, { recursive: true });
+    fs.writeFileSync(mdPath, '# Test Article');
+
+    mgr.add({ id: 'del-md', type: 'rss', name: 'Del MD', url: 'http://del-md' });
+    db.insertContentItem({
+      source_type: 'rss', source_id: 'del-md', item_id: 'ci-md-1',
+      title: 'T1', url: 'http://1', author: 'A',
+      published_date: '2026-01-01', fetched_date: '2026-01-01',
+      markdown_file_path: mdPath, raw_content: null, summary: null, tags: null, status: 'fetched',
+    });
+    mgr.remove('del-md', { deleteData: true });
+    assert.equal(fs.existsSync(mdPath), false);
+  });
+
+  it('remove(id, { deleteData: true }) markdown 檔不存在時不應拋出錯誤', () => {
+    mgr.add({ id: 'del-nofile', type: 'rss', name: 'Del NoFile', url: 'http://del-nofile' });
+    db.insertContentItem({
+      source_type: 'rss', source_id: 'del-nofile', item_id: 'ci-nofile-1',
+      title: 'T1', url: 'http://1', author: 'A',
+      published_date: '2026-01-01', fetched_date: '2026-01-01',
+      markdown_file_path: '/nonexistent/path/article.md', raw_content: null, summary: null, tags: null, status: 'fetched',
+    });
+    assert.doesNotThrow(() => mgr.remove('del-nofile', { deleteData: true }));
+    assert.equal(mgr.getById('del-nofile'), null);
+  });
+
   it('toggle() 應切換啟用狀態', () => {
     mgr.add({ id: 't', type: 'rss', name: 'T', url: 'http://t' });
     let ds = mgr.toggle('t', false);

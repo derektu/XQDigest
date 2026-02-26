@@ -238,11 +238,11 @@ function createRoutes(engine) {
     {
       method: 'DELETE',
       pattern: '/api/datasources/:id',
-      handler: (params) => {
+      handler: (params, body) => {
         const mgr = getMgr();
         const scheduler = engine.getScheduler();
         if (scheduler) scheduler.removeSource(params.id);
-        mgr.remove(params.id);
+        mgr.remove(params.id, { deleteData: !!body?.deleteData });
         return { data: { ok: true } };
       },
     },

@@ -35,8 +35,8 @@ export default function useDataSources() {
     return result;
   }, [refresh]);
 
-  const remove = useCallback(async (id) => {
-    await dataSources.remove(id);
+  const remove = useCallback(async (id, deleteData = false) => {
+    await dataSources.remove(id, deleteData);
     await refresh();
   }, [refresh]);
 

@@ -92,7 +92,16 @@ class DataSourceManager {
     return this.getById(id);
   }
 
-  remove(id) {
+  remove(id, { deleteData = false } = {}) {
+    if (deleteData) {
+      const fs = require('fs');
+      const paths = this._db.getContentItemPathsBySourceId(id);
+      for (const p of paths) {
+        if (p) try { fs.unlinkSync(p); } catch (_) {}
+      }
+      this._db.deleteContentItemsBySourceId(id);
+      this._db.deleteFailedItemsBySourceId(id);
+    }
     this._db.deleteDataSource(id);
   }
 

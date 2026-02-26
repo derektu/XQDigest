@@ -67,6 +67,25 @@ describe('DataSourceManager', () => {
     });
   });
 
+  it('add() 重複 URL 應拋錯且 code 為 DUPLICATE_URL', () => {
+    mgr.add({ id: 'dup-url-1', type: 'rss', name: 'Original', url: 'http://same-url' });
+    let caught;
+    try {
+      mgr.add({ id: 'dup-url-2', type: 'rss', name: 'Duplicate', url: 'http://same-url' });
+    } catch (err) {
+      caught = err;
+    }
+    assert.ok(caught, '應拋出錯誤');
+    assert.equal(caught.code, 'DUPLICATE_URL');
+    assert.ok(caught.message.includes('Original'), '錯誤訊息應包含原始資料源名稱');
+  });
+
+  it('add() 不同 URL 應正常新增', () => {
+    mgr.add({ id: 'url-a', type: 'rss', name: 'A', url: 'http://url-a' });
+    const ds = mgr.add({ id: 'url-b', type: 'rss', name: 'B', url: 'http://url-b' });
+    assert.equal(ds.id, 'url-b');
+  });
+
   it('getAll() 應回傳所有資料源', () => {
     mgr.add({ id: 'a', type: 'youtube', name: 'A', url: 'http://a' });
     mgr.add({ id: 'b', type: 'rss', name: 'B', url: 'http://b', enabled: false });

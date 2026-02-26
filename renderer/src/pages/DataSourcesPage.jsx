@@ -158,6 +158,7 @@ export function DataSourcesContent() {
           onCancel={() => { setShowForm(false); setEditTarget(null); }}
           onValidate={validate}
           isPackaged={isPackaged}
+          existingSources={list}
         />
       )}
 

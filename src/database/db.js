@@ -153,6 +153,12 @@ class DB {
     return this.db.prepare('SELECT * FROM data_sources WHERE id = ?').get(id);
   }
 
+  getDataSourceByUrl(url) {
+    return this.db.prepare(
+      'SELECT id, source_name FROM data_sources WHERE source_url = ?'
+    ).get(url);
+  }
+
   insertDataSource(ds) {
     const stmt = this.db.prepare(`
       INSERT INTO data_sources (id, source_type, source_name, source_url, check_interval, max_items, lookback_days, prompt, is_active)

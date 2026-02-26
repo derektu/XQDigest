@@ -69,9 +69,15 @@ const styles = {
     flexShrink: 0,
     fontWeight: 600,
   },
+  sourceList: {
+    flex: 1,
+    overflowY: 'auto',
+    minHeight: 0,
+  },
   footer: {
     marginTop: 'auto',
     borderTop: '1px solid var(--color-border)',
+    flexShrink: 0,
   },
   footerLink: {
     display: 'block',
@@ -138,27 +144,29 @@ export default function SourceNav({ selectedSourceId, onSelect, unreadCounts }) 
 
       <div style={styles.sectionHeader}>來源</div>
 
-      <div
-        style={styles.item(selectedSourceId === null)}
-        onClick={() => onSelect(null)}
-      >
-        <span style={styles.name}>全部</span>
-        {allUnread > 0 && <span style={styles.badge}>{allUnread}</span>}
-      </div>
+      <div style={styles.sourceList}>
+        <div
+          style={styles.item(selectedSourceId === null)}
+          onClick={() => onSelect(null)}
+        >
+          <span style={styles.name}>全部</span>
+          {allUnread > 0 && <span style={styles.badge}>{allUnread}</span>}
+        </div>
 
-      {sources.map(ds => {
-        const unread = unreadCounts?.bySource?.[ds.id] ?? 0;
-        return (
-          <div
-            key={ds.id}
-            style={styles.item(selectedSourceId === ds.id)}
-            onClick={() => onSelect(ds.id)}
-          >
-            <span style={styles.name}>{ds.name}</span>
-            {unread > 0 && <span style={styles.badge}>{unread}</span>}
-          </div>
-        );
-      })}
+        {sources.map(ds => {
+          const unread = unreadCounts?.bySource?.[ds.id] ?? 0;
+          return (
+            <div
+              key={ds.id}
+              style={styles.item(selectedSourceId === ds.id)}
+              onClick={() => onSelect(ds.id)}
+            >
+              <span style={styles.name}>{ds.name}</span>
+              {unread > 0 && <span style={styles.badge}>{unread}</span>}
+            </div>
+          );
+        })}
+      </div>
 
       <div style={styles.footer}>
         {!llmConfigured && (

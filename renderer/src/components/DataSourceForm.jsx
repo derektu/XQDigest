@@ -55,7 +55,7 @@ const DEFAULTS = {
   prompt: '', enabled: true,
 };
 
-export default function DataSourceForm({ initial, onSave, onCancel, onValidate, isPackaged = false }) {
+export default function DataSourceForm({ initial, onSave, onCancel, onValidate, isPackaged = false, existingSources = [] }) {
   const MIN_CHECK_INTERVAL = isPackaged ? 5 : 1; // 分鐘
   const isEdit = !!initial;
   const initialForm = { ...DEFAULTS, ...initial };
@@ -107,6 +107,10 @@ export default function DataSourceForm({ initial, onSave, onCancel, onValidate, 
     if (!/^[a-z0-9][a-z0-9-]*$/.test(form.id)) errs.id = '只允許小寫字母、數字、連字號';
     if (!form.name.trim()) errs.name = '必填';
     if (!form.url.trim()) errs.url = '必填';
+    if (!isEdit && form.url.trim()) {
+      const dup = existingSources.find(s => s.url === form.url.trim());
+      if (dup) errs.url = `URL 已存在（${dup.name}）`;
+    }
     if (form.checkInterval < MIN_CHECK_INTERVAL) errs.checkInterval = `最少 ${MIN_CHECK_INTERVAL} 分鐘`;
     if (form.maxItems < 1) errs.maxItems = '最少 1';
     if (form.lookbackDays < 1) errs.lookbackDays = '最少 1 天';

@@ -66,6 +66,12 @@ class DataSourceManager {
   }
 
   add({ id, type, name, url, checkInterval = 3600, maxItems = 10, lookbackDays = 7, prompt = '', enabled = true }) {
+    const existing = this._db.getDataSourceByUrl(url);
+    if (existing) {
+      const err = new Error(`URL 已存在（資料源：${existing.source_name}）`);
+      err.code = 'DUPLICATE_URL';
+      throw err;
+    }
     this._db.insertDataSource({
       id,
       source_type: type,

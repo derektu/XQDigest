@@ -1,6 +1,6 @@
 {
   "name": "xqdigest",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "XQDigest - 財經資訊自動摘要工具",
   "main": "electron/main.js",
   "scripts": {

@@ -94,10 +94,10 @@ class DB {
 
   getUnreadCounts() {
     const all = this.db.prepare(
-      "SELECT COUNT(*) as count FROM content_items WHERE is_read = 0 AND status IN ('processed', 'summarized')"
+      "SELECT COUNT(*) as count FROM content_items WHERE is_read = 0 AND status IN ('fetched', 'processed', 'summarized')"
     ).get();
     const bySourceRows = this.db.prepare(
-      "SELECT source_id, COUNT(*) as count FROM content_items WHERE is_read = 0 AND status IN ('processed', 'summarized') GROUP BY source_id"
+      "SELECT source_id, COUNT(*) as count FROM content_items WHERE is_read = 0 AND status IN ('fetched', 'processed', 'summarized') GROUP BY source_id"
     ).all();
     const bySource = {};
     for (const row of bySourceRows) {

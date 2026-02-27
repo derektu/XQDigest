@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import ValidationStatus from './ValidationStatus';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -63,14 +63,20 @@ export default function DataSourceForm({ initial, onSave, onCancel, onValidate, 
     initialForm.checkInterval = Math.round(initial.checkInterval / 60);
   }
   const [form, setForm] = useState(initialForm);
-  const mouseDownOnOverlay = useRef(false);
   const [idManual, setIdManual] = useState(isEdit);
   const [validation, setValidation] = useState(null);
+
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [forceSaveConfirm, setForceSaveConfirm] = useState(null);
   const [rawInputs, setRawInputs] = useState({});
+
+  useEffect(() => {
+    const handleKeyDown = (e) => { if (e.key === 'Escape') onCancel(); };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
 
   const setNum = (key, raw) => {
     setRawInputs(r => ({ ...r, [key]: raw }));
@@ -156,12 +162,8 @@ export default function DataSourceForm({ initial, onSave, onCancel, onValidate, 
   const errStyle = { color: 'var(--color-danger)', fontSize: 12 };
 
   return (
-    <div
-      style={formStyle}
-      onMouseDown={(e) => { mouseDownOnOverlay.current = (e.target === e.currentTarget); }}
-      onMouseUp={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) onCancel(); }}
-    >
-      <div style={modalStyle} onMouseDown={(e) => e.stopPropagation()}>
+    <div style={formStyle}>
+      <div style={modalStyle}>
         <h3 style={{ margin: '0 0 16px', color: 'var(--color-text-primary)' }}>
           {isEdit ? '編輯資料源' : '新增資料源'}
         </h3>

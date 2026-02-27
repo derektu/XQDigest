@@ -131,13 +131,14 @@ describe('DB', () => {
     db.markContentRead(item.id, false);
   });
 
-  it('getUnreadCounts() 應計入 summarized 和 processed 狀態', () => {
-    // vid-001 is summarized, rss-001 and vid-002 are fetched (should NOT be counted)
+  it('getUnreadCounts() 應計入 fetched、summarized 和 processed 狀態', () => {
+    // vid-001 is summarized (unread), rss-001 and vid-002 are fetched (unread) — all 3 should be counted
     const counts = db.getUnreadCounts();
     assert.ok(typeof counts.all === 'number', 'all should be a number');
     assert.ok(typeof counts.bySource === 'object', 'bySource should be an object');
-    // Only summarized items should be counted (not fetched)
-    assert.equal(counts.all, 1); // just vid-001 (summarized, unread)
+    // fetched items should now also be counted
+    assert.equal(counts.all, 3); // vid-001 (summarized) + rss-001 (fetched) + vid-002 (fetched)
+    assert.equal(counts.bySource['source-1'], 3);
   });
 
   // --- failed_items ---

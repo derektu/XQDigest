@@ -15,6 +15,15 @@ export default function useContentFeed() {
   const offsetRef = useRef(0);
   const loadingRef = useRef(false);
 
+  // Refs for polling callback to avoid stale closures
+  const selectedSourceIdRef = useRef(selectedSourceId);
+  const selectedItemIdRef = useRef(selectedItemId);
+  const itemsRef = useRef(items);
+
+  useEffect(() => { selectedSourceIdRef.current = selectedSourceId; }, [selectedSourceId]);
+  useEffect(() => { selectedItemIdRef.current = selectedItemId; }, [selectedItemId]);
+  useEffect(() => { itemsRef.current = items; }, [items]);
+
   const fetchUnreadCounts = useCallback(async () => {
     try {
       const data = await contentApi.unreadCounts();
@@ -52,6 +61,53 @@ export default function useContentFeed() {
     loadItems(selectedSourceId, true);
     fetchUnreadCounts();
   }, [selectedSourceId, loadItems, fetchUnreadCounts]);
+
+  // 偵測是否有尚未摘要的項目（status='fetched'）
+  const hasPending = useMemo(() => items.some(item => item.status === 'fetched'), [items]);
+
+  // 有條件輪詢：有 pending 項目時每 5 秒刷新已載入的列表
+  useEffect(() => {
+    if (!hasPending) return;
+    const timer = setInterval(async () => {
+      const currentOffset = offsetRef.current;
+      if (currentOffset === 0) return;
+      try {
+        const fresh = await contentApi.list({
+          sourceId: selectedSourceIdRef.current || undefined,
+          limit: currentOffset,
+          offset: 0,
+        });
+
+        const currentItems = itemsRef.current;
+        const curSelectedItemId = selectedItemIdRef.current;
+
+        // 合併更新（保留 scroll 位置，不重置整個列表）
+        setItems(prev => prev.map(old => {
+          const updated = fresh.find(n => n.id === old.id);
+          return updated ? { ...old, ...updated } : old;
+        }));
+
+        // 若目前開啟的文章從 fetched 轉為 summarized，重新 fetch detail
+        if (curSelectedItemId) {
+          const oldItem = currentItems.find(i => i.id === curSelectedItemId);
+          const newItem = fresh.find(n => n.id === curSelectedItemId);
+          if (oldItem?.status === 'fetched' && newItem?.status === 'summarized') {
+            try {
+              const detail = await contentApi.get(curSelectedItemId);
+              setSelectedItem(detail);
+            } catch (_) {
+              // silently ignore
+            }
+          }
+        }
+
+        await fetchUnreadCounts();
+      } catch (_) {
+        // silently ignore
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [hasPending, fetchUnreadCounts]);
 
   const loadMore = useCallback(() => {
     if (!hasMore || loading) return;

@@ -12,7 +12,7 @@ const REDIRECT_URI     = 'http://localhost:1455/auth/callback';
 const SCOPES           = 'openid profile email offline_access';
 const API_URL          = 'https://chatgpt.com/backend-api/codex/responses';
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000;
-const LOGIN_TIMEOUT_MS = 60 * 1000;
+const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_MODEL    = 'gpt-5.2';
 
 class OAuthClient {

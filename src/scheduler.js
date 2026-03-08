@@ -363,7 +363,7 @@ class Scheduler {
       }
 
       const sourcePrompt = this._getSourcePrompt(source.id);
-      const summaryText = await this.llmService.summarize(rawContent, item.title, sourcePrompt, item.itemId);
+      const summaryText = await this.llmService.summarize(rawContent, item.title, sourcePrompt, item.itemId, item.sourceType);
       this.logger.info(`${tag} Summary generated: "${item.title}"`);
 
       await this.storage.updateSummary(item, summaryText);

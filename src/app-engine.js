@@ -97,11 +97,9 @@ class AppEngine extends EventEmitter {
     return this._db.getAppSetting('llm');
   }
 
-  // 建立 LLMServiceConfig，以 settings.json 的 summarizationPrompt 作為 fallback
+  // 建立 LLMServiceConfig
   _buildLLMConfig(data) {
-    const configPrompt = this._configManager.getLLMConfig().summarizationPrompt;
-    const summarizationPrompt = data.summarizationPrompt || configPrompt || '';
-    return new LLMServiceConfig({ ...data, summarizationPrompt });
+    return new LLMServiceConfig(data);
   }
 
   getOAuthStatus() {

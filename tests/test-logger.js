@@ -16,6 +16,13 @@ function readLogFile(dir = TMP_LOG_DIR, file = LOG_FILE) {
   return fs.readFileSync(path.join(dir, file), 'utf8');
 }
 
+function toLocalDateStr(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 describe('LoggerConfig', () => {
   it('預設值應正確設定', () => {
     const config = new LoggerConfig();
@@ -149,7 +156,7 @@ describe('Logger', () => {
     const logger2 = new Logger({ level: 'info', logDir: TMP_LOG_DIR, logFile: LOG_FILE });
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    logger2.currentDate = yesterday.toISOString().split('T')[0];
+    logger2.currentDate = toLocalDateStr(yesterday);
 
     // Write should trigger rotation
     logger2.info('after rotation');
@@ -157,7 +164,7 @@ describe('Logger', () => {
     await new Promise(r => setTimeout(r, 200));
 
     // Rotated file should exist with yesterday's date
-    const rotatedFile = `${LOG_FILE}.${yesterday.toISOString().split('T')[0]}`;
+    const rotatedFile = `${LOG_FILE}.${toLocalDateStr(yesterday)}`;
     assert.ok(fs.existsSync(path.join(TMP_LOG_DIR, rotatedFile)),
       `Rotated file ${rotatedFile} should exist`);
 
@@ -187,7 +194,7 @@ describe('Logger', () => {
     await new Promise(r => setTimeout(r, 200));
 
     // 舊 log 應被搬到 app.log.<昨天日期>
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const yesterdayStr = toLocalDateStr(yesterday);
     const rotatedPath = path.join(TMP_LOG_DIR, `${LOG_FILE}.${yesterdayStr}`);
     assert.ok(fs.existsSync(rotatedPath), `Rotated file ${LOG_FILE}.${yesterdayStr} should exist`);
 
@@ -206,19 +213,19 @@ describe('Logger', () => {
     // Create old log files (10 days ago and 3 days ago)
     const oldDate = new Date();
     oldDate.setDate(oldDate.getDate() - 10);
-    const oldFile = `${LOG_FILE}.${oldDate.toISOString().split('T')[0]}`;
+    const oldFile = `${LOG_FILE}.${toLocalDateStr(oldDate)}`;
     fs.writeFileSync(path.join(TMP_LOG_DIR, oldFile), 'old log\n');
 
     const recentDate = new Date();
     recentDate.setDate(recentDate.getDate() - 3);
-    const recentFile = `${LOG_FILE}.${recentDate.toISOString().split('T')[0]}`;
+    const recentFile = `${LOG_FILE}.${toLocalDateStr(recentDate)}`;
     fs.writeFileSync(path.join(TMP_LOG_DIR, recentFile), 'recent log\n');
 
     // Create logger with 7-day retention and simulate rotation to trigger cleanup
     const logger = new Logger({ level: 'info', logDir: TMP_LOG_DIR, logFile: LOG_FILE, retentionDays: 7 });
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    logger.currentDate = yesterday.toISOString().split('T')[0];
+    logger.currentDate = toLocalDateStr(yesterday);
 
     // Write a current log first so rotation has something to rename
     fs.writeFileSync(path.join(TMP_LOG_DIR, LOG_FILE), 'current\n');
@@ -244,7 +251,7 @@ describe('Logger', () => {
     for (let i = 1; i <= 5; i++) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      const file = `${LOG_FILE}.${d.toISOString().split('T')[0]}`;
+      const file = `${LOG_FILE}.${toLocalDateStr(d)}`;
       fs.writeFileSync(path.join(TMP_LOG_DIR, file), `log day -${i}\n`);
     }
 
@@ -256,7 +263,7 @@ describe('Logger', () => {
     for (let i = 1; i <= 5; i++) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      const file = `${LOG_FILE}.${d.toISOString().split('T')[0]}`;
+      const file = `${LOG_FILE}.${toLocalDateStr(d)}`;
       assert.ok(fs.existsSync(path.join(TMP_LOG_DIR, file)),
         `File ${file} (${i} days old) should be kept`);
     }

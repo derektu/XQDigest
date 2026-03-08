@@ -1,15 +1,10 @@
 const OpenAIProvider = require('./openai');
 const GeminiProvider = require('./gemini');
 const Logger = require('../logger');
-
-const DEFAULT_SUMMARIZE_PROMPT = `你是一個專業的財經內容摘要助手。請用繁體中文總結以下內容的重點。
-
-輸出格式：
-第一段：以 2-3 句話概述整體內容。
-關鍵要點（3-5 條，每條以「• 」開頭）：列出最重要的資訊、數據或觀點。`;
+const { SummarizePromptBuilder } = require('./prompts');
 
 class LLMServiceConfig {
-  constructor({ provider, apiKey, model, maxTokens = 1000, temperature = 0.7, baseUrl, systemPrompt = '', summarizationPrompt, oauthClient } = {}) {
+  constructor({ provider, apiKey, model, maxTokens = 1000, temperature = 0.7, baseUrl, systemPrompt = '', summarizationPrompt, oauthClient, outputLevel = 'auto' } = {}) {
     this.provider = provider;
     this.apiKey = apiKey;
     this.model = model;
@@ -19,6 +14,7 @@ class LLMServiceConfig {
     this.systemPrompt = systemPrompt;
     this.summarizationPrompt = summarizationPrompt;
     this.oauthClient = oauthClient || null;
+    this.outputLevel = outputLevel;
   }
 }
 
@@ -29,7 +25,8 @@ class LLMService {
     this.llmLogger = llmLogger || null;
     this.providerName = cfg.provider;
     this.provider = this._createProvider(cfg, this.logger);
-    this.defaultPrompt = cfg.summarizationPrompt || DEFAULT_SUMMARIZE_PROMPT;
+    this.defaultPrompt = cfg.summarizationPrompt || null;
+    this.outputLevel = cfg.outputLevel || 'auto';
   }
 
   _createProvider(config, logger) {
@@ -68,10 +65,22 @@ class LLMService {
    * @param {string} title - Content title
    * @param {string} [customPrompt] - Optional custom system prompt override
    * @param {string} [itemId] - Item ID for LLM logging
+   * @param {string} [sourceType] - 'youtube' | 'rss' | other (used for auto prompt selection)
    * @returns {Promise<string>} Raw LLM response text
    */
-  async summarize(content, title, customPrompt, itemId) {
-    const systemContent = customPrompt || this.defaultPrompt;
+  async summarize(content, title, customPrompt, itemId, sourceType) {
+    const effectiveCustomPrompt = customPrompt || this.defaultPrompt;
+    let systemPrompt, maxTokens;
+    if (effectiveCustomPrompt) {
+      systemPrompt = effectiveCustomPrompt;
+      maxTokens = 1536;
+    } else {
+      const builder = new SummarizePromptBuilder({
+        outputLevel: this.outputLevel,
+        sourceType,
+      });
+      ({ systemPrompt, maxTokens } = builder.build(content, title));
+    }
     const userMessage = `以下是「${title}」的內容：\n\n${content}`;
 
     this.logger.debug(`Calling LLM for summary: ${title}`);
@@ -79,10 +88,10 @@ class LLMService {
     try {
       const response = await this.provider.chatCompletion(
         [
-          { role: 'system', content: systemContent },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
         ],
-        {}
+        { maxTokens }
       );
 
       const durationMs = Date.now() - startTime;
@@ -121,7 +130,8 @@ class LLMService {
     const cfg = config instanceof LLMServiceConfig ? config : new LLMServiceConfig(config);
     this.providerName = cfg.provider;
     this.provider = this._createProvider(cfg, this.logger);
-    this.defaultPrompt = cfg.summarizationPrompt || DEFAULT_SUMMARIZE_PROMPT;
+    this.defaultPrompt = cfg.summarizationPrompt || null;
+    this.outputLevel = cfg.outputLevel || 'auto';
   }
 }
 

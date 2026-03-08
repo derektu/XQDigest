@@ -23,6 +23,8 @@ class OpenAIProvider extends BaseLLMProvider {
     }
     allMessages.push(...messages);
 
+    const effectiveMaxTokens = options.maxTokens ?? this.maxTokens;
+
     const requestOptions = {
       model: this.model,
       messages: allMessages,
@@ -30,11 +32,12 @@ class OpenAIProvider extends BaseLLMProvider {
 
     const isGpt5Family = typeof this.model === 'string' && this.model.startsWith('gpt-5');
     if (isGpt5Family) {
-      // GPT-5 family uses max_completion_tokens in Chat Completions API
-      requestOptions.max_completion_tokens = this.maxTokens;
-      // Some GPT-5 variants may not accept temperature in Chat Completions
+      // GPT-5 reasoning models use max_completion_tokens which includes internal reasoning tokens.
+      // Reasoning tokens consume most of the budget, leaving little for visible output.
+      // Multiply by 8 (capped at 32768) to ensure sufficient visible output after reasoning overhead.
+      requestOptions.max_completion_tokens = Math.min(effectiveMaxTokens * 8, 32768);
     } else {
-      requestOptions.max_tokens = this.maxTokens;
+      requestOptions.max_tokens = effectiveMaxTokens;
       requestOptions.temperature = this.temperature;
     }
 

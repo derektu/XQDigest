@@ -2,12 +2,164 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const LLMService = require('../src/llm');
 const { LLMServiceConfig } = require('../src/llm');
+const { SummarizePromptBuilder, buildSummarizePrompt, pickLengthForContent, SUMMARY_LENGTH_SPECS } = require('../src/llm/prompts');
 const OpenAIProvider = require('../src/llm/openai');
 const GeminiProvider = require('../src/llm/gemini');
 const BaseLLMProvider = require('../src/llm/base');
 const { LLMProviderConfig } = require('../src/llm/base');
 
 const logger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
+
+describe('buildSummarizePrompt', () => {
+  it('youtube sourceType 應包含影片相關角色定義', () => {
+    const { systemPrompt } = buildSummarizePrompt({ content: 'test', sourceType: 'youtube' });
+    assert.ok(systemPrompt.includes('YouTube') || systemPrompt.includes('影片'), '應含 YouTube 或影片');
+  });
+
+  it('rss sourceType 應包含文章相關角色定義', () => {
+    const { systemPrompt } = buildSummarizePrompt({ content: 'test', sourceType: 'rss' });
+    assert.ok(systemPrompt.includes('文章'), '應含文章');
+  });
+
+  it('youtube sourceType 應包含 sponsor omit 指引', () => {
+    const { systemPrompt } = buildSummarizePrompt({ content: 'test', sourceType: 'youtube' });
+    assert.ok(systemPrompt.includes('sponsor') || systemPrompt.includes('Omit sponsor'), '應有 sponsor 指引');
+  });
+
+  it('rss sourceType 不應包含 sponsor omit 指引', () => {
+    const { systemPrompt } = buildSummarizePrompt({ content: 'test', sourceType: 'rss' });
+    assert.ok(!systemPrompt.includes('Omit sponsor'), 'rss 不應有 Omit sponsor');
+  });
+
+  it('customPrompt 有值時應直接回傳，不走自動邏輯', () => {
+    const { systemPrompt, maxTokens } = buildSummarizePrompt({
+      content: 'test',
+      sourceType: 'youtube',
+      customPrompt: '我的自訂 prompt',
+    });
+    assert.equal(systemPrompt, '我的自訂 prompt');
+    assert.equal(maxTokens, 1536);
+  });
+
+  it('短內容（< 2000 chars）應選 short spec', () => {
+    const content = 'a'.repeat(100);
+    const { maxTokens } = buildSummarizePrompt({ content, sourceType: 'rss' });
+    assert.equal(maxTokens, SUMMARY_LENGTH_SPECS.short.maxTokens);
+  });
+
+  it('長內容（>= 20000 chars）應選 xl spec', () => {
+    const content = 'a'.repeat(20000);
+    const { maxTokens } = buildSummarizePrompt({ content, sourceType: 'rss' });
+    assert.equal(maxTokens, SUMMARY_LENGTH_SPECS.xl.maxTokens);
+  });
+
+  it('medium 內容（2000-8000 chars）應選 medium spec', () => {
+    const content = 'a'.repeat(5000);
+    const { maxTokens } = buildSummarizePrompt({ content, sourceType: 'youtube' });
+    assert.equal(maxTokens, SUMMARY_LENGTH_SPECS.medium.maxTokens);
+  });
+
+  it('long 內容（8000-20000 chars）應選 long spec', () => {
+    const content = 'a'.repeat(10000);
+    const { maxTokens } = buildSummarizePrompt({ content, sourceType: 'youtube' });
+    assert.equal(maxTokens, SUMMARY_LENGTH_SPECS.long.maxTokens);
+  });
+
+  it('回傳的 systemPrompt 應包含繁體中文輸出指示', () => {
+    const { systemPrompt } = buildSummarizePrompt({ content: 'test', sourceType: 'rss' });
+    assert.ok(systemPrompt.includes('繁體中文'), '應包含繁體中文指示');
+  });
+
+  it('回傳的 systemPrompt 應包含 Markdown 格式指示', () => {
+    const { systemPrompt } = buildSummarizePrompt({ content: 'test', sourceType: 'rss' });
+    assert.ok(systemPrompt.includes('Markdown'), '應包含 Markdown 指示');
+  });
+});
+
+describe('pickLengthForContent', () => {
+  it('空字串應回傳 short', () => {
+    assert.equal(pickLengthForContent(''), 'short');
+  });
+
+  it('< 2000 chars 應回傳 short', () => {
+    assert.equal(pickLengthForContent('a'.repeat(1999)), 'short');
+  });
+
+  it('2000 chars 應回傳 medium', () => {
+    assert.equal(pickLengthForContent('a'.repeat(2000)), 'medium');
+  });
+
+  it('8000 chars 應回傳 long', () => {
+    assert.equal(pickLengthForContent('a'.repeat(8000)), 'long');
+  });
+
+  it('>= 20000 chars 應回傳 xl', () => {
+    assert.equal(pickLengthForContent('a'.repeat(20000)), 'xl');
+  });
+});
+
+describe('SummarizePromptBuilder', () => {
+  it('outputLevel=auto 短內容應等同 short spec', () => {
+    const builder = new SummarizePromptBuilder({ outputLevel: 'auto', sourceType: 'rss' });
+    const { maxTokens, length } = builder.build('a'.repeat(100));
+    assert.equal(length, 'short');
+    assert.equal(maxTokens, SUMMARY_LENGTH_SPECS.short.maxTokens);
+  });
+
+  it('outputLevel=auto 長內容應等同 xl spec', () => {
+    const builder = new SummarizePromptBuilder({ outputLevel: 'auto', sourceType: 'rss' });
+    const { maxTokens, length } = builder.build('a'.repeat(20000));
+    assert.equal(length, 'xl');
+    assert.equal(maxTokens, SUMMARY_LENGTH_SPECS.xl.maxTokens);
+  });
+
+  it('outputLevel 明確指定 short 時，無論 content 長短都應用 short spec', () => {
+    const builder = new SummarizePromptBuilder({ outputLevel: 'short', sourceType: 'rss' });
+    const { maxTokens, length } = builder.build('a'.repeat(50000));
+    assert.equal(length, 'short');
+    assert.equal(maxTokens, SUMMARY_LENGTH_SPECS.short.maxTokens);
+  });
+
+  it('outputLevel=xl 時 systemPrompt 應包含 heading 指引（"## "）', () => {
+    const builder = new SummarizePromptBuilder({ outputLevel: 'xl', sourceType: 'rss' });
+    const { systemPrompt } = builder.build('a'.repeat(100));
+    assert.ok(systemPrompt.includes('## '), 'xl 應有 ## heading 指引');
+  });
+
+  it('outputLevel=short 時 systemPrompt 不應包含 heading 指引', () => {
+    const builder = new SummarizePromptBuilder({ outputLevel: 'short', sourceType: 'rss' });
+    const { systemPrompt } = builder.build('a'.repeat(100));
+    assert.ok(!systemPrompt.includes('## '), 'short 不應有 heading 指引');
+  });
+
+  it('youtube sourceType 應包含 sponsor instruction', () => {
+    const builder = new SummarizePromptBuilder({ outputLevel: 'auto', sourceType: 'youtube' });
+    const { systemPrompt } = builder.build('a'.repeat(100));
+    assert.ok(systemPrompt.includes('Omit sponsor'), 'youtube 應有 sponsor instruction');
+  });
+
+  it('rss sourceType 不應包含 sponsor instruction', () => {
+    const builder = new SummarizePromptBuilder({ outputLevel: 'auto', sourceType: 'rss' });
+    const { systemPrompt } = builder.build('a'.repeat(100));
+    assert.ok(!systemPrompt.includes('Omit sponsor'), 'rss 不應有 sponsor instruction');
+  });
+
+  it('無效 outputLevel 應拋出錯誤', () => {
+    assert.throws(
+      () => new SummarizePromptBuilder({ outputLevel: 'invalid' }),
+      /Unknown outputLevel/
+    );
+  });
+
+  it('build() 回傳值應包含 systemPrompt, maxTokens, length 三個欄位', () => {
+    const builder = new SummarizePromptBuilder({ outputLevel: 'medium', sourceType: 'rss' });
+    const result = builder.build('some content');
+    assert.ok('systemPrompt' in result, '應有 systemPrompt');
+    assert.ok('maxTokens' in result, '應有 maxTokens');
+    assert.ok('length' in result, '應有 length');
+    assert.equal(result.length, 'medium');
+  });
+});
 
 describe('LLMProviderConfig', () => {
   it('預設值應正確設定', () => {
@@ -40,6 +192,7 @@ describe('LLMServiceConfig', () => {
     assert.equal(config.temperature, 0.7);
     assert.equal(config.systemPrompt, '');
     assert.equal(config.summarizationPrompt, undefined);
+    assert.equal(config.outputLevel, 'auto');
   });
 
   it('傳入的值應覆蓋預設值', () => {
@@ -54,6 +207,13 @@ describe('LLMServiceConfig', () => {
     const svc = new LLMService(config, logger);
     assert.ok(svc.provider instanceof OpenAIProvider);
     assert.equal(svc.defaultPrompt, '自訂');
+    assert.equal(svc.outputLevel, 'auto');
+  });
+
+  it('outputLevel 設定應正確傳遞到 LLMService', () => {
+    const config = new LLMServiceConfig({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', outputLevel: 'xl' });
+    const svc = new LLMService(config, logger);
+    assert.equal(svc.outputLevel, 'xl');
   });
 });
 
@@ -272,6 +432,31 @@ describe('LLMService', () => {
     assert.equal(capturedMessages[1].role, 'user');
     assert.equal(capturedOptions.responseFormat, undefined);
     assert.equal(result, '整體摘要。\n\n• 要點一\n• 要點二');
+  });
+
+  it('summarize() 無 customPrompt 時應使用 SummarizePromptBuilder（short content → short spec）', async () => {
+    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini' }, logger);
+    let capturedOptions;
+    svc.provider.chatCompletion = async (messages, options) => {
+      capturedOptions = options;
+      return { text: '摘要', usage: null };
+    };
+
+    await svc.summarize('short content', 'Title', null, null, 'rss');
+    assert.equal(capturedOptions.maxTokens, SUMMARY_LENGTH_SPECS.short.maxTokens);
+  });
+
+  it('summarize() outputLevel=xl 應使用 xl spec maxTokens', async () => {
+    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', outputLevel: 'xl' }, logger);
+    let capturedOptions;
+    svc.provider.chatCompletion = async (messages, options) => {
+      capturedOptions = options;
+      return { text: '摘要', usage: null };
+    };
+
+    // short content but outputLevel=xl overrides
+    await svc.summarize('short content', 'Title', null, null, 'rss');
+    assert.equal(capturedOptions.maxTokens, SUMMARY_LENGTH_SPECS.xl.maxTokens);
   });
 
   it('summarize() 有 customPrompt 時應使用 customPrompt 並直接回傳 raw text', async () => {

@@ -12,7 +12,7 @@ class GeminiProvider extends BaseLLMProvider {
 
   async chatCompletion(messages, options = {}) {
     const generationConfig = {
-      maxOutputTokens: this.maxTokens,
+      maxOutputTokens: options.maxTokens ?? this.maxTokens,
       temperature: this.temperature,
     };
 

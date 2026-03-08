@@ -66,13 +66,21 @@ logs/                 — 日誌 (git ignored)
 
 ### 必須遵守的規則
 - **任何模組的新增或修改，都必須同步新增或更新對應的測試檔案**
-- 測試檔案位於 `tests/` 目錄，命名格式為 `test-{模組名稱}.js`
 - 完成修改後執行 `npm test` 確認全部通過
+
+### 測試命名規範
+- **Unit tests**（自動掃描）：`test-{模組名稱}.js`，`npm test` 執行
+- **Integration tests**（手動執行）：`integration-{主題}.js`，`npm run test:integration` 執行
+  - 需要真實網路或 API key 的測試一律使用此格式
+  - 網路不可用或無 API key 時，graceful skip（不拋錯）
 
 ### 測試執行方式
 ```bash
-npm test                            # 執行所有測試（自動掃描 tests/test-*.js）
-node --test tests/test-config.js    # 執行單一模組測試
+npm test                                        # 執行所有 unit tests（自動掃描 tests/test-*.js）
+node --test tests/test-config.js                # 執行單一 unit test
+npm run test:integration                        # 執行所有 integration tests（需要網路/API key）
+OPENAI_API_KEY=sk-xxx node --test tests/integration-summarize.js  # 執行單一 integration test
+MODEL=gpt-4o OPENAI_API_KEY=sk-xxx node --test tests/integration-summarize.js  # 指定 model
 ```
 
 ### 修改程式碼時的 checklist

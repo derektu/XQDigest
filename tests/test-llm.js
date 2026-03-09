@@ -7,6 +7,7 @@ const OpenAIProvider = require('../src/llm/openai');
 const GeminiProvider = require('../src/llm/gemini');
 const BaseLLMProvider = require('../src/llm/base');
 const { LLMProviderConfig } = require('../src/llm/base');
+const { OpenAIOAuthProvider } = require('../src/llm/openai-oauth');
 
 const logger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 
@@ -428,5 +429,35 @@ describe('LLMService', () => {
     svc.provider.chatCompletion = async () => ({ text: rawText, usage: null });
     const result = await svc.summarize('content', 'Title');
     assert.equal(result, rawText);
+  });
+});
+
+describe('OpenAIOAuthProvider', () => {
+  const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
+
+  it('chatCompletion() 使用預設 model gpt-5.2 時應傳入正確 model', async () => {
+    let capturedOptions;
+    const mockOAuthClient = {
+      chatCompletion: async (messages, options) => {
+        capturedOptions = options;
+        return { text: '回應', usage: null };
+      },
+    };
+    const provider = new OpenAIOAuthProvider(mockOAuthClient, logger);
+    await provider.chatCompletion([{ role: 'user', content: 'test' }]);
+    assert.equal(capturedOptions.model, 'gpt-5.2');
+  });
+
+  it('chatCompletion() 使用 gpt-5-codex-mini 時應傳入正確 model', async () => {
+    let capturedOptions;
+    const mockOAuthClient = {
+      chatCompletion: async (messages, options) => {
+        capturedOptions = options;
+        return { text: '回應', usage: null };
+      },
+    };
+    const provider = new OpenAIOAuthProvider(mockOAuthClient, logger, 'gpt-5-codex-mini');
+    await provider.chatCompletion([{ role: 'user', content: 'test' }]);
+    assert.equal(capturedOptions.model, 'gpt-5-codex-mini');
   });
 });

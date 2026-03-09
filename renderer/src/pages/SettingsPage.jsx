@@ -119,6 +119,8 @@ const btnSecondary = {
   whiteSpace: 'nowrap',
 };
 
+const OAUTH_MODELS = ['gpt-5.2', 'gpt-5-codex-mini'];
+
 const PROVIDERS = [
   { value: 'openai-oauth',      label: 'OpenAI（帳號登入）' },
   { value: 'openai',            label: 'OpenAI (API Key)' },
@@ -131,7 +133,9 @@ function makeInitialForm(settings) {
     provider: settings?.provider || 'openai',
     apiKey: settings?.apiKey || '',
     baseUrl: settings?.baseUrl || '',
-    model: settings?.model || '',
+    model: settings?.provider === 'openai-oauth'
+      ? (OAUTH_MODELS.includes(settings?.model) ? settings.model : 'gpt-5.2')
+      : (settings?.model || ''),
     maxTokens: settings?.maxTokens ?? 4096,
     temperature: settings?.temperature ?? 0.7,
     requestsPerMinute: settings?.requestsPerMinute ?? 0,
@@ -264,7 +268,7 @@ function LLMSettingsContent() {
       await saveLLM({
         provider: form.provider,
         apiKey:   form.provider === 'openai-oauth' ? '' : form.apiKey,
-        model:    form.provider === 'openai-oauth' ? 'gpt-5.2' : form.model,
+        model:    form.model,
         baseUrl:  form.baseUrl || null,
         maxTokens: parseInt(form.maxTokens) || 4096,
         temperature: parseFloat(form.temperature) || 0.7,
@@ -276,7 +280,7 @@ function LLMSettingsContent() {
       savedFormRef.current = makeInitialForm({
         provider: form.provider,
         apiKey:   form.provider === 'openai-oauth' ? '' : form.apiKey,
-        model:    form.provider === 'openai-oauth' ? 'gpt-5.2' : form.model,
+        model:    form.model,
         baseUrl:  form.baseUrl || '',
         maxTokens: parseInt(form.maxTokens) || 4096,
         temperature: parseFloat(form.temperature) || 0.7,
@@ -333,7 +337,16 @@ function LLMSettingsContent() {
 
             <div style={fieldGroup}>
               <label style={labelStyle}>Provider</label>
-              <select style={selectStyle} value={form.provider} onChange={set('provider')}>
+              <select style={selectStyle} value={form.provider} onChange={(e) => {
+                const newProvider = e.target.value;
+                setForm(f => ({
+                  ...f,
+                  provider: newProvider,
+                  model: newProvider === 'openai-oauth'
+                    ? (OAUTH_MODELS.includes(f.model) ? f.model : 'gpt-5.2')
+                    : f.model,
+                }));
+              }}>
                 {PROVIDERS.map(p => (
                   <option key={p.value} value={p.value}>{p.label}</option>
                 ))}
@@ -379,11 +392,9 @@ function LLMSettingsContent() {
             {form.provider === 'openai-oauth' ? (
               <div style={fieldGroup}>
                 <label style={labelStyle}>Model</label>
-                <input
-                  style={{ ...inputStyle, color: 'var(--color-text-muted)' }}
-                  value="gpt-5.2"
-                  readOnly
-                />
+                <select style={selectStyle} value={form.model || 'gpt-5.2'} onChange={set('model')}>
+                  {OAUTH_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
               </div>
             ) : (
               <div style={{ ...fieldGroup, ...rowStyle }}>

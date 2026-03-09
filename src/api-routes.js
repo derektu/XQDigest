@@ -321,7 +321,7 @@ function createRoutes(engine) {
           if (!status?.loggedIn) {
             return { data: { valid: false, error: '尚未登入 OpenAI OAuth' } };
           }
-          return { data: { valid: true, models: ['gpt-5.2'] } };
+          return { data: { valid: true, models: ['gpt-5.2', 'gpt-5-codex-mini'] } };
         }
         // If apiKey is masked (starts with ****), fall back to the stored actual key
         let actualApiKey = apiKey;

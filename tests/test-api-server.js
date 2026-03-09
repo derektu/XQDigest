@@ -359,7 +359,7 @@ describe('ApiServer', () => {
     const res = await makeRequest(port, 'POST', '/api/settings/llm/test', { provider: 'openai-oauth' });
     assert.equal(res.status, 200);
     assert.equal(res.body.valid, true);
-    assert.deepEqual(res.body.models, ['gpt-5.2']);
+    assert.deepEqual(res.body.models, ['gpt-5.2', 'gpt-5-codex-mini']);
     engine._setOAuthLoggedIn(false);
   });
 });

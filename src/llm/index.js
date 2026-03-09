@@ -44,7 +44,7 @@ class LLMService {
       case 'openai-oauth': {
         const { OpenAIOAuthProvider } = require('./openai-oauth');
         if (!config.oauthClient) throw new Error('openai-oauth requires oauthClient');
-        return new OpenAIOAuthProvider(config.oauthClient, logger);
+        return new OpenAIOAuthProvider(config.oauthClient, logger, config.model);
       }
       default:
         throw new Error(`Unknown LLM provider: ${config.provider}`);

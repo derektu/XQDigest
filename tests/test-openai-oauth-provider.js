@@ -32,7 +32,7 @@ describe('OpenAIOAuthProvider', () => {
     assert.equal(provider.model, 'gpt-5.2');
   });
 
-  it('chatCompletion() 應將 messages 和 options 原樣轉發給 oauthClient', async () => {
+  it('chatCompletion() 應將 messages 和 options 轉發給 oauthClient，並帶入 model', async () => {
     let capturedMessages, capturedOptions;
     const mockClient = {
       chatCompletion: async (messages, options) => {
@@ -51,7 +51,8 @@ describe('OpenAIOAuthProvider', () => {
     await provider.chatCompletion(messages, options);
 
     assert.deepEqual(capturedMessages, messages);
-    assert.deepEqual(capturedOptions, options);
+    assert.equal(capturedOptions.model, 'gpt-5.2');
+    assert.equal(capturedOptions.responseFormat, 'text');
   });
 
   it('onChunk callback 應正確傳遞', async () => {

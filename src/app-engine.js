@@ -133,6 +133,9 @@ class AppEngine extends EventEmitter {
       if (this._scheduler) this._scheduler.updateLLMService(this._llmService);
       if (this._llmQueue) this._llmQueue.updateRateLimit(data.requestsPerMinute || 0);
       if (this._logger) this._logger.info('LLM provider switched to openai-oauth');
+      this._resumePendingSummaries().catch(err =>
+        this._logger?.error(`Resume pending summaries failed: ${err.message}`)
+      );
       return;
     }
     if (data && data.apiKey) {
@@ -140,6 +143,9 @@ class AppEngine extends EventEmitter {
       if (this._scheduler) this._scheduler.updateLLMService(this._llmService);
       if (this._llmQueue) this._llmQueue.updateRateLimit(data.requestsPerMinute || 0);
       if (this._logger) this._logger.info(`LLM re-configured: ${data.provider} / ${data.model}`);
+      this._resumePendingSummaries().catch(err =>
+        this._logger?.error(`Resume pending summaries failed: ${err.message}`)
+      );
     } else {
       this._llmService = null;
       if (this._scheduler) this._scheduler.updateLLMService(null);

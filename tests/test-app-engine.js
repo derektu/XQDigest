@@ -253,6 +253,46 @@ describe('AppEngine', () => {
     await engine.stop();
   });
 
+  it('setLLMSettings() apiKey 分支設定 LLM 後應呼叫 _resumePendingSummaries()', async () => {
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    let resumeCalled = false;
+    engine._resumePendingSummaries = async () => { resumeCalled = true; };
+
+    // Need _db to be set (setLLMSettings guards on it)
+    engine._db = { setAppSetting: () => {} };
+
+    engine.setLLMSettings({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' });
+
+    // Wait a tick for the async .catch chain
+    await new Promise(r => setImmediate(r));
+    assert.ok(resumeCalled, '_resumePendingSummaries should be called after apiKey LLM setup');
+  });
+
+  it('setLLMSettings() openai-oauth 分支設定 LLM 後應呼叫 _resumePendingSummaries()', async () => {
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    let resumeCalled = false;
+    engine._resumePendingSummaries = async () => { resumeCalled = true; };
+    engine._oauthClient = {};
+    engine._db = { setAppSetting: () => {} };
+
+    engine.setLLMSettings({ provider: 'openai-oauth' });
+
+    await new Promise(r => setImmediate(r));
+    assert.ok(resumeCalled, '_resumePendingSummaries should be called after openai-oauth LLM setup');
+  });
+
+  it('setLLMSettings() 清除 LLM 時不應呼叫 _resumePendingSummaries()', async () => {
+    const engine = new AppEngine({ configPath: CONFIG_PATH });
+    let resumeCalled = false;
+    engine._resumePendingSummaries = async () => { resumeCalled = true; };
+    engine._db = { setAppSetting: () => {} };
+
+    engine.setLLMSettings({}); // no apiKey, no oauth
+
+    await new Promise(r => setImmediate(r));
+    assert.ok(!resumeCalled, '_resumePendingSummaries should NOT be called when clearing LLM');
+  });
+
   it('stop() 在 LLM queue 有 active task 時應在 6 秒內完成', async () => {
     writeConfig();
     const engine = new AppEngine({ configPath: CONFIG_PATH });

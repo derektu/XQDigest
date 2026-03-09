@@ -1,4 +1,8 @@
 const OpenAIProvider = require('./openai');
+
+function _stripMarkdownFence(text) {
+  return text.replace(/^```(?:markdown)?\n([\s\S]*?)\n```\s*$/, '$1').trim();
+}
 const GeminiProvider = require('./gemini');
 const Logger = require('../logger');
 const { SummarizePromptBuilder } = require('./prompts');
@@ -109,7 +113,7 @@ class LLMService {
       }
 
       this.logger.debug(`LLM summary completed: ${title}`);
-      return response.text;
+      return _stripMarkdownFence(response.text);
     } catch (err) {
       const durationMs = Date.now() - startTime;
       if (this.llmLogger && itemId) {

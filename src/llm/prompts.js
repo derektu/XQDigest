@@ -2,36 +2,36 @@
 
 const SUMMARY_LENGTH_SPECS = {
   short: {
-    guidance: 'Write a tight summary that delivers the primary claim plus one high-signal supporting detail.',
-    formatting: 'Use 1-2 short paragraphs (a single paragraph is fine). Aim for 2-5 sentences total.',
+    guidance: '撰寫精簡摘要，點出核心論點及一個重要佐證。',
+    formatting: '使用 1-2 個短段落（單一段落亦可）。全文約 2-5 句。',
     targetCharacters: 900,
     minCharacters: 600,
     maxCharacters: 1200,
     maxTokens: 2048,
   },
   medium: {
-    guidance: 'Write a clear summary that covers the core claim plus the most important supporting evidence or data points.',
-    formatting: 'Use 1-3 short paragraphs (2 is typical, but a single paragraph is okay if the content is simple). Aim for 2-3 sentences per paragraph.',
+    guidance: '撰寫清晰摘要，涵蓋核心論點及最重要的佐證或數據。',
+    formatting: '使用 1-3 個短段落（2 段為典型，內容簡單時單段亦可）。每段約 2-3 句。',
     targetCharacters: 1800,
     minCharacters: 1200,
     maxCharacters: 2500,
     maxTokens: 4096,
   },
   long: {
-    guidance: 'Write a detailed summary that prioritizes the most important points first, followed by key supporting facts or events, then secondary details or conclusions stated in the source.',
-    formatting: 'Paragraphs are optional; use up to 3 short paragraphs. Aim for 2-4 sentences per paragraph when you split into paragraphs.',
+    guidance: '撰寫詳細摘要，依重要性排序：最重要的觀點優先，其次是關鍵佐證或事件，最後是次要細節或原文結論。',
+    formatting: '段落為選用；最多 3 個短段落。分段時每段約 2-4 句。',
     targetCharacters: 4200,
     minCharacters: 2500,
     maxCharacters: 6000,
     maxTokens: 10240,
   },
   xl: {
-    guidance: 'Write a detailed summary that captures the main points, supporting facts, and concrete numbers or quotes when present.',
-    formatting: 'Use 2-5 short paragraphs. Aim for 2-4 sentences per paragraph.',
-    targetCharacters: 9000,
-    minCharacters: 6000,
-    maxCharacters: 14000,
-    maxTokens: 16384,
+    guidance: '撰寫詳盡摘要，涵蓋主要論點、佐證事實，以及原文中出現的具體數字或引述。',
+    formatting: '使用 2-5 個短段落。每段約 2-4 句。',
+    targetCharacters: 6000,
+    minCharacters: 4000,
+    maxCharacters: 9000,
+    maxTokens: 10240,
   },
 };
 
@@ -75,35 +75,34 @@ class SummarizePromptBuilder {
     const spec = SUMMARY_LENGTH_SPECS[length];
 
     const roleDefinition = this.sourceType === 'youtube'
-      ? '你是專業財經影片摘要助手。請為繁體中文讀者摘要 YouTube 財經影片的內容。'
-      : '你是專業財經文章摘要助手。請為繁體中文讀者摘要財經文章的重要資訊。';
+      ? '你是專業財經摘要助理。摘要 YouTube 財經內容給繁體中文讀者。'
+      : '你是專業財經摘要助理。摘要財經文章給繁體中文讀者。';
 
     const sponsorInstruction = this.sourceType === 'youtube'
-      ? 'Omit sponsor messages, ads, promos, and calls-to-action (including ad reads). Do not mention or acknowledge them. Treat them as if they do not exist.'
+      ? '忽略所有贊助訊息、廣告、置入性行銷及行動呼籲（包括口播廣告）。不要提及或承認其存在，視同不存在。'
       : null;
 
-    // xl: add heading instruction (mirrors reference link-summary.ts)
-    const headingInstruction = (length === 'xl')
-      ? 'Use Markdown headings with "## " prefix to break sections. Include at least 3 headings and start with a heading. Do not use bold for headings.'
+    const headingInstruction = length === 'xl'
+      ? '使用 Markdown「## 」標題分節。標題數量控制在 3-6 個，以第一個標題開頭。標題請勿使用粗體。'
       : null;
 
     const formatCount = (n) => n.toLocaleString();
-    const lengthGuidance = `Target length: around ${formatCount(spec.targetCharacters)} characters (acceptable range ${formatCount(spec.minCharacters)}-${formatCount(spec.maxCharacters)}). This is a soft guideline; prioritize clarity.`;
+    const lengthGuidance = `目標字數：約 ${formatCount(spec.targetCharacters)} 字（可接受範圍 ${formatCount(spec.minCharacters)}-${formatCount(spec.maxCharacters)} 字）。此為參考值，以清晰表達為優先。`;
 
     const lines = [
       roleDefinition,
       '',
-      'Hard rules: 不提及廣告或贊助商，不臆測或推斷內容以外的資訊，只使用直引號。不在摘要中提及素材類型（如「逐字稿」、「字幕」、「文章」等）。',
+      '硬性規則：不提及廣告或贊助商，不臆測或推斷內容以外的資訊，只使用直引號。不在摘要中提及素材類型（如「逐字稿」、「字幕」、「文章」等）。',
       sponsorInstruction,
       spec.guidance,
       spec.formatting,
       headingInstruction,
-      '請用繁體中文輸出。',
-      'Format the answer in Markdown.',
-      'Use short paragraphs; use bullet lists only when they improve scanability; avoid rigid templates.',
-      'Do not use emojis, disclaimers, or speculation.',
-      'Write in direct, factual language.',
-      'Base everything strictly on the provided content and never invent details.',
+      '請用繁體中文輸出。英文專有名詞、人名、機構名稱請翻譯為中文，必要時可在首次出現時括號附註英文原文。金額請轉換為中文表達方式（如「150 億美元」而非「$15 billion」）。',
+      '以 Markdown 格式直接輸出內容，禁止用程式碼區塊（``` 反引號）包裹整個回答。',
+      '段落宜短；適當使用條列式提高可讀性，但避免死板的固定模板。',
+      '不使用表情符號、免責聲明或臆測。',
+      '以直述、客觀的語氣撰寫。',
+      '嚴格根據所提供的內容，不捏造細節。',
       lengthGuidance,
     ].filter(line => line != null);
 

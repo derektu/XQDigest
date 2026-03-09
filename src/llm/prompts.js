@@ -7,7 +7,7 @@ const SUMMARY_LENGTH_SPECS = {
     targetCharacters: 900,
     minCharacters: 600,
     maxCharacters: 1200,
-    maxTokens: 768,
+    maxTokens: 2048,
   },
   medium: {
     guidance: 'Write a clear summary that covers the core claim plus the most important supporting evidence or data points.',
@@ -15,7 +15,7 @@ const SUMMARY_LENGTH_SPECS = {
     targetCharacters: 1800,
     minCharacters: 1200,
     maxCharacters: 2500,
-    maxTokens: 1536,
+    maxTokens: 4096,
   },
   long: {
     guidance: 'Write a detailed summary that prioritizes the most important points first, followed by key supporting facts or events, then secondary details or conclusions stated in the source.',
@@ -23,7 +23,7 @@ const SUMMARY_LENGTH_SPECS = {
     targetCharacters: 4200,
     minCharacters: 2500,
     maxCharacters: 6000,
-    maxTokens: 3072,
+    maxTokens: 10240,
   },
   xl: {
     guidance: 'Write a detailed summary that captures the main points, supporting facts, and concrete numbers or quotes when present.',
@@ -31,36 +31,27 @@ const SUMMARY_LENGTH_SPECS = {
     targetCharacters: 9000,
     minCharacters: 6000,
     maxCharacters: 14000,
-    maxTokens: 6144,
-  },
-  xxl: {
-    guidance: 'Write a comprehensive summary that covers background, main points, evidence, and stated outcomes in the source text; avoid adding implications or recommendations unless explicitly stated.',
-    formatting: 'Use 3-7 short paragraphs. Aim for 2-4 sentences per paragraph.',
-    targetCharacters: 17000,
-    minCharacters: 14000,
-    maxCharacters: 22000,
-    maxTokens: 12288,
+    maxTokens: 16384,
   },
 };
 
 /**
  * Pick summary length based on input content character count.
  * @param {string} content
- * @returns {'short'|'medium'|'long'|'xl'|'xxl'}
+ * @returns {'short'|'medium'|'long'|'xl'}
  */
 function pickLengthForContent(content) {
   const len = (content || '').length;
   if (len < 2000) return 'short';
   if (len < 8000) return 'medium';
   if (len < 20000) return 'long';
-  if (len < 50000) return 'xl';
-  return 'xxl';
+  return 'xl';
 }
 
 class SummarizePromptBuilder {
   /**
    * @param {Object} opts
-   * @param {'auto'|'short'|'medium'|'long'|'xl'|'xxl'} [opts.outputLevel='auto']
+   * @param {'auto'|'short'|'medium'|'long'|'xl'} [opts.outputLevel='auto']
    * @param {'youtube'|'rss'|string} [opts.sourceType='rss']
    */
   constructor({ outputLevel = 'auto', sourceType = 'rss' } = {}) {
@@ -92,7 +83,7 @@ class SummarizePromptBuilder {
       : null;
 
     // xl: add heading instruction (mirrors reference link-summary.ts)
-    const headingInstruction = (length === 'xl' || length === 'xxl')
+    const headingInstruction = (length === 'xl')
       ? 'Use Markdown headings with "## " prefix to break sections. Include at least 3 headings and start with a heading. Do not use bold for headings.'
       : null;
 

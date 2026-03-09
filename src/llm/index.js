@@ -27,6 +27,7 @@ class LLMService {
     this.provider = this._createProvider(cfg, this.logger);
     this.defaultPrompt = cfg.summarizationPrompt || null;
     this.outputLevel = cfg.outputLevel || 'auto';
+    this.maxTokens = cfg.maxTokens;
   }
 
   _createProvider(config, logger) {
@@ -73,7 +74,7 @@ class LLMService {
     let systemPrompt, maxTokens;
     if (effectiveCustomPrompt) {
       systemPrompt = effectiveCustomPrompt;
-      maxTokens = 1536;
+      maxTokens = this.maxTokens;
     } else {
       const builder = new SummarizePromptBuilder({
         outputLevel: this.outputLevel,
@@ -132,6 +133,7 @@ class LLMService {
     this.provider = this._createProvider(cfg, this.logger);
     this.defaultPrompt = cfg.summarizationPrompt || null;
     this.outputLevel = cfg.outputLevel || 'auto';
+    this.maxTokens = cfg.maxTokens;
   }
 }
 

@@ -472,6 +472,18 @@ describe('LLMService', () => {
     assert.equal(result, '## 摘要標題\n\n這是 markdown 格式的摘要');
   });
 
+  it('summarize() 有 customPrompt 時 maxTokens 應使用 config.maxTokens（非 hardcoded）', async () => {
+    const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', maxTokens: 2048 }, logger);
+    let capturedOptions;
+    svc.provider.chatCompletion = async (messages, options) => {
+      capturedOptions = options;
+      return { text: '摘要', usage: null };
+    };
+
+    await svc.summarize('content', 'Title', '自訂 prompt');
+    assert.equal(capturedOptions.maxTokens, 2048);
+  });
+
   it('summarize() config.summarizationPrompt 應作為預設 prompt', async () => {
     const svc = new LLMService({ provider: 'openai', apiKey: 'fake', model: 'gpt-4o-mini', summarizationPrompt: '自訂系統 prompt' }, logger);
     let capturedMessages;

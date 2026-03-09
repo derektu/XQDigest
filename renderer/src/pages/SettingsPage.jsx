@@ -407,6 +407,7 @@ function LLMSettingsContent() {
                   min={256}
                   max={32768}
                 />
+                <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>僅自訂 Prompt 時生效；內建自動 Prompt 依內容長度自動決定</div>
               </div>
               <div style={{ ...fieldGroup, flex: 1 }}>
                 <label style={labelStyle}>Temperature</label>

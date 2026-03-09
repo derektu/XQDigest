@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import useSettings from '../hooks/useSettings';
 import ValidationStatus from '../components/ValidationStatus';
@@ -226,10 +226,15 @@ function LLMSettingsContent() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
 
+  // 追蹤上次存檔的 form 值，用來判斷 isDirty
+  const savedFormRef = useRef(makeInitialForm(null));
+
   // Populate form once settings are loaded
   useEffect(() => {
     if (llmSettings !== undefined) {
-      setForm(makeInitialForm(llmSettings));
+      const f = makeInitialForm(llmSettings);
+      setForm(f);
+      savedFormRef.current = f;
     }
   }, [llmSettings]);
 
@@ -268,12 +273,38 @@ function LLMSettingsContent() {
       });
       setSaveOk(true);
       setTimeout(() => setSaveOk(false), 2500);
+      savedFormRef.current = makeInitialForm({
+        provider: form.provider,
+        apiKey:   form.provider === 'openai-oauth' ? '' : form.apiKey,
+        model:    form.provider === 'openai-oauth' ? 'gpt-5.2' : form.model,
+        baseUrl:  form.baseUrl || '',
+        maxTokens: parseInt(form.maxTokens) || 4096,
+        temperature: parseFloat(form.temperature) || 0.7,
+        requestsPerMinute: parseInt(form.requestsPerMinute) || 0,
+        summarizationPrompt: form.summarizationPrompt,
+      });
     } catch (err) {
       setSaveError(err.message);
     } finally {
       setSaving(false);
     }
   };
+
+  // 讓 useEffect 能呼叫最新的 handleSave（避免 stale closure）
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
+  // 追蹤 oauthPolling 前一個值，OAuth 授權完成後自動儲存
+  const prevOauthPollingRef = useRef(false);
+  useEffect(() => {
+    const wasPolling = prevOauthPollingRef.current;
+    prevOauthPollingRef.current = oauthPolling;
+    if (wasPolling && !oauthPolling && oauthStatus?.loggedIn && form.provider === 'openai-oauth') {
+      handleSaveRef.current();
+    }
+  }, [oauthPolling, oauthStatus?.loggedIn, form.provider]);
+
+  const isDirty = JSON.stringify(form) !== JSON.stringify(savedFormRef.current);
 
   const isUnset = !llmSettings;
 
@@ -443,6 +474,20 @@ function LLMSettingsContent() {
                 placeholder="留空使用預設 prompt。可在此輸入自訂摘要指示，例如：請以繁體中文摘要，列出 3 個重點..."
               />
             </div>
+
+            {isDirty && !saving && (
+              <div style={{
+                background: 'rgba(255,160,0,0.12)',
+                border: '1px solid rgba(255,160,0,0.5)',
+                borderRadius: 4,
+                padding: '8px 12px',
+                marginBottom: 10,
+                fontSize: 12,
+                color: '#c97c00',
+              }}>
+                ⚠ 您有未儲存的變更，請按「儲存設定」
+              </div>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
               <button style={btnPrimary} onClick={handleSave} disabled={saving}>

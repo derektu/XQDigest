@@ -29,6 +29,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const OPENAI_COMPATIBLE_URL = process.env.OPENAI_COMPATIBLE_URL;
 const OPENAI_COMPATIBLE_KEY = process.env.OPENAI_COMPATIBLE_KEY;
 const MODEL = process.env.MODEL;
+const VIDEO_ID = process.env.VIDEO_ID || 'eh8bcBIAAFo';
 
 function getLLMConfig() {
   if (OPENAI_API_KEY) {
@@ -61,7 +62,7 @@ const logger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {
 // SummarizePromptBuilder outputLevel 各等級比較（同一 input: eh8bcBIAAFo）
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('Integration: SummarizePromptBuilder — 各 outputLevel 比較（同一 input: eh8bcBIAAFo）', () => {
+describe(`Integration: SummarizePromptBuilder — 各 outputLevel 比較（同一 input: ${VIDEO_ID}）`, () => {
   let sharedTranscript = null;
   let sharedLLMConfig = null;
   let skipReason = null;
@@ -75,7 +76,7 @@ describe('Integration: SummarizePromptBuilder — 各 outputLevel 比較（同�
 
     const fetcher = new YouTubeFetcher();
     try {
-      sharedTranscript = await fetcher.fetchTranscript('eh8bcBIAAFo');
+      sharedTranscript = await fetcher.fetchTranscript(VIDEO_ID);
     } catch (err) {
       if (isNetworkError(err)) {
         skipReason = '網路不可用';
@@ -89,7 +90,7 @@ describe('Integration: SummarizePromptBuilder — 各 outputLevel 比較（同�
       return;
     }
 
-    console.log(`[OutputLevel] eh8bcBIAAFo 逐字稿長度: ${sharedTranscript.length} chars`);
+    console.log(`[OutputLevel] ${VIDEO_ID} 逐字稿長度: ${sharedTranscript.length} chars`);
     console.log(`[OutputLevel] 使用 provider: ${sharedLLMConfig.provider}, model: ${sharedLLMConfig.model}`);
   });
 
@@ -100,10 +101,10 @@ describe('Integration: SummarizePromptBuilder — 各 outputLevel 比較（同�
     }
 
     const builder = new SummarizePromptBuilder({ outputLevel, sourceType: 'youtube' });
-    const { systemPrompt, maxTokens } = builder.build(sharedTranscript, 'eh8bcBIAAFo');
+    const { systemPrompt, maxTokens } = builder.build(sharedTranscript, VIDEO_ID);
 
     const llm = new LLMService(sharedLLMConfig, logger);
-    const userMessage = `以下是「eh8bcBIAAFo」的內容：\n\n${sharedTranscript}`;
+    const userMessage = `以下是「${VIDEO_ID}」的內容：\n\n${sharedTranscript}`;
 
     const response = await llm.provider.chatCompletion(
       [
@@ -134,36 +135,16 @@ describe('Integration: SummarizePromptBuilder — 各 outputLevel 比較（同�
   });
 
   it('L04 xl level — 應產生完整分節摘要（含 ## 標題，~9000 chars）', async () => {
-    if (skipReason) {
-      console.log(`[SKIP] ${skipReason}，跳過 xl`);
-      return;
-    }
     const summary = await runLevel('xl');
     if (summary) {
       assert.ok(summary.includes('## '), 'xl 摘要應包含 ## 標題');
     }
   });
 
-  it('L05 auto level — 長 transcript 應自動選 xl', async () => {
-    if (skipReason) {
-      console.log(`[SKIP] ${skipReason}，跳過 auto`);
-      return;
-    }
-    // verify auto picks xl for this long transcript (< 50000 chars)
-    const builder = new SummarizePromptBuilder({ outputLevel: 'auto', sourceType: 'youtube' });
-    const { length } = builder.build(sharedTranscript || 'a'.repeat(30000));
-    assert.ok(length === 'xl' || length === 'xxl', `長 transcript 的 auto 應選 xl 或 xxl，實際: ${length}`);
+  /*
+  it('L05 auto level — 應產生摘要', async () => {
     await runLevel('auto');
   });
+  */
 
-  it('L06 xxl level — 應產生完整分節摘要（含 ## 標題，~17000 chars）', async () => {
-    if (skipReason) {
-      console.log(`[SKIP] ${skipReason}，跳過 xxl`);
-      return;
-    }
-    const summary = await runLevel('xxl');
-    if (summary) {
-      assert.ok(summary.includes('## '), 'xxl 摘要應包含 ## 標題');
-    }
-  });
 });

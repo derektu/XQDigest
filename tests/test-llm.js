@@ -435,7 +435,7 @@ describe('LLMService', () => {
 describe('OpenAIOAuthProvider', () => {
   const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 
-  it('chatCompletion() 使用預設 model gpt-5.2 時應傳入正確 model', async () => {
+  it('chatCompletion() 使用預設 model gpt-5-codex-mini 時應傳入正確 model', async () => {
     let capturedOptions;
     const mockOAuthClient = {
       chatCompletion: async (messages, options) => {
@@ -445,7 +445,7 @@ describe('OpenAIOAuthProvider', () => {
     };
     const provider = new OpenAIOAuthProvider(mockOAuthClient, logger);
     await provider.chatCompletion([{ role: 'user', content: 'test' }]);
-    assert.equal(capturedOptions.model, 'gpt-5.2');
+    assert.equal(capturedOptions.model, 'gpt-5-codex-mini');
   });
 
   it('chatCompletion() 使用 gpt-5-codex-mini 時應傳入正確 model', async () => {

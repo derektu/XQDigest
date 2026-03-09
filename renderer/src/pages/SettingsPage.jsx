@@ -119,7 +119,7 @@ const btnSecondary = {
   whiteSpace: 'nowrap',
 };
 
-const OAUTH_MODELS = ['gpt-5.2', 'gpt-5-codex-mini'];
+const OAUTH_MODELS = ['gpt-5-codex-mini', 'gpt-5.2'];
 
 const PROVIDERS = [
   { value: 'openai-oauth',      label: 'OpenAI（帳號登入）' },
@@ -134,7 +134,7 @@ function makeInitialForm(settings) {
     apiKey: settings?.apiKey || '',
     baseUrl: settings?.baseUrl || '',
     model: settings?.provider === 'openai-oauth'
-      ? (OAUTH_MODELS.includes(settings?.model) ? settings.model : 'gpt-5.2')
+      ? (OAUTH_MODELS.includes(settings?.model) ? settings.model : 'gpt-5-codex-mini')
       : (settings?.model || ''),
     maxTokens: settings?.maxTokens ?? 4096,
     temperature: settings?.temperature ?? 0.7,
@@ -343,7 +343,7 @@ function LLMSettingsContent() {
                   ...f,
                   provider: newProvider,
                   model: newProvider === 'openai-oauth'
-                    ? (OAUTH_MODELS.includes(f.model) ? f.model : 'gpt-5.2')
+                    ? (OAUTH_MODELS.includes(f.model) ? f.model : 'gpt-5-codex-mini')
                     : f.model,
                 }));
               }}>
@@ -392,7 +392,7 @@ function LLMSettingsContent() {
             {form.provider === 'openai-oauth' ? (
               <div style={fieldGroup}>
                 <label style={labelStyle}>Model</label>
-                <select style={selectStyle} value={form.model || 'gpt-5.2'} onChange={set('model')}>
+                <select style={selectStyle} value={form.model || 'gpt-5-codex-mini'} onChange={set('model')}>
                   {OAUTH_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>

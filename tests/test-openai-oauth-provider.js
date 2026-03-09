@@ -27,9 +27,9 @@ describe('OpenAIOAuthProvider', () => {
     assert.ok(provider instanceof BaseLLMProvider);
   });
 
-  it('model 應固定為 gpt-5.2', () => {
+  it('model 預設應為 gpt-5-codex-mini', () => {
     const provider = new OpenAIOAuthProvider(makeMockOAuthClient(), logger);
-    assert.equal(provider.model, 'gpt-5.2');
+    assert.equal(provider.model, 'gpt-5-codex-mini');
   });
 
   it('chatCompletion() 應將 messages 和 options 轉發給 oauthClient，並帶入 model', async () => {
@@ -51,7 +51,7 @@ describe('OpenAIOAuthProvider', () => {
     await provider.chatCompletion(messages, options);
 
     assert.deepEqual(capturedMessages, messages);
-    assert.equal(capturedOptions.model, 'gpt-5.2');
+    assert.equal(capturedOptions.model, 'gpt-5-codex-mini');
     assert.equal(capturedOptions.responseFormat, 'text');
   });
 

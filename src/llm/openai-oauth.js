@@ -2,7 +2,7 @@
 const BaseLLMProvider = require('./base');
 
 class OpenAIOAuthProvider extends BaseLLMProvider {
-  constructor(oauthClient, logger, model = 'gpt-5.2') {
+  constructor(oauthClient, logger, model = 'gpt-5-codex-mini') {
     super({ model, maxTokens: 0, temperature: 0 }, logger);
     this.oauthClient = oauthClient;
   }

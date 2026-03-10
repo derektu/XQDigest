@@ -4,6 +4,7 @@ import useSettings from '../hooks/useSettings';
 import ValidationStatus from '../components/ValidationStatus';
 import TabNav from '../components/TabNav';
 import { DataSourcesContent } from './DataSourcesPage';
+import { engine as engineIpc } from '../ipc';
 
 const pageStyle = {
   display: 'flex',
@@ -527,6 +528,18 @@ export default function SettingsPage() {
     // 使用 replace 避免每次切換 tab 都產生新的 history entry
     setSearchParams({ tab: tabId }, { replace: true });
   };
+
+  // 若 URL 未指定 tab 且 LLM 尚未設定，自動切換到 LLM tab
+  useEffect(() => {
+    if (searchParams.has('tab')) return; // URL 已明確指定 tab，不覆蓋
+    engineIpc.getStatus()
+      .then(s => {
+        if (s.llmConfigured === false) {
+          setSearchParams({ tab: 'llm' }, { replace: true });
+        }
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleBack = () => {
     // 統一返回至 Feed 頁面，確保從任何入口（tray menu、直接訪問等）都有一致的行為

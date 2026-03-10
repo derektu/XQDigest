@@ -170,7 +170,7 @@ export default function SourceNav({ selectedSourceId, onSelect, unreadCounts }) 
 
       <div style={styles.footer}>
         {!llmConfigured && (
-          <div style={styles.llmWarning} onClick={() => navigate('/settings')}>
+          <div style={styles.llmWarning} onClick={() => navigate('/settings?tab=llm')}>
             ⚠ LLM 尚未設定 → 前往設定
           </div>
         )}

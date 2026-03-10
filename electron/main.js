@@ -57,6 +57,7 @@ app.on('ready', async () => {
             title: 'XQDigest',
             message: '正在檢查更新中，請稍候...',
             buttons: ['確定'],
+            noLink: true,
           });
           return;
         }
@@ -68,6 +69,7 @@ app.on('ready', async () => {
             message: `v${updaterState.pendingVersion} 正在背景下載中`,
             detail: '下載完成後將自動通知您安裝。',
             buttons: ['確定'],
+            noLink: true,
           });
           return;
         }
@@ -80,6 +82,7 @@ app.on('ready', async () => {
             detail: '是否立即重啟並安裝更新？',
             buttons: ['立即重啟', '稍後'],
             defaultId: 0,
+            noLink: true,
           }).then(({ response }) => {
             if (response === 0) autoUpdater.quitAndInstall();
           });
@@ -145,6 +148,7 @@ app.on('ready', async () => {
         detail: '是否要立即下載更新？下載將在背景進行，完成後會通知您。',
         buttons: ['開始下載', '稍後再說'],
         defaultId: 0,
+        noLink: true,
       });
       if (response === 0) {
         updaterState.status = 'downloading';
@@ -155,6 +159,7 @@ app.on('ready', async () => {
           message: `v${info.version} 正在背景下載中`,
           detail: '下載完成後將自動通知您安裝。',
           buttons: ['確定'],
+          noLink: true,
         });
       } else {
         updaterState.status = 'idle';
@@ -170,6 +175,7 @@ app.on('ready', async () => {
         detail: '重新啟動後將安裝更新。',
         buttons: ['立即重啟', '稍後'],
         defaultId: 0,
+        noLink: true,
       });
       if (response === 0) autoUpdater.quitAndInstall();
     });
@@ -185,6 +191,7 @@ app.on('ready', async () => {
           title: 'XQDigest',
           message: '已是最新版本',
           buttons: ['確定'],
+          noLink: true,
         });
       }
     });

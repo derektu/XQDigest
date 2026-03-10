@@ -62,30 +62,35 @@ export default function useContentFeed() {
     fetchUnreadCounts();
   }, [selectedSourceId, loadItems, fetchUnreadCounts]);
 
-  // 偵測是否有尚未摘要的項目（status='fetched'）
-  const hasPending = useMemo(() => items.some(item => item.status === 'fetched'), [items]);
+  // 統一 15 秒輪詢：涵蓋新項目、status 更新、badge 刷新
+  const POLL_INTERVAL = 15000;
 
-  // 有條件輪詢：有 pending 項目時每 5 秒刷新已載入的列表
   useEffect(() => {
-    if (!hasPending) return;
     const timer = setInterval(async () => {
-      const currentOffset = offsetRef.current;
-      if (currentOffset === 0) return;
+      if (loadingRef.current) return;
       try {
+        await fetchUnreadCounts();
         const fresh = await contentApi.list({
           sourceId: selectedSourceIdRef.current || undefined,
-          limit: currentOffset,
+          limit: Math.max(offsetRef.current, PAGE_SIZE),
           offset: 0,
         });
 
         const currentItems = itemsRef.current;
         const curSelectedItemId = selectedItemIdRef.current;
 
-        // 合併更新（保留 scroll 位置，不重置整個列表）
-        setItems(prev => prev.map(old => {
-          const updated = fresh.find(n => n.id === old.id);
-          return updated ? { ...old, ...updated } : old;
-        }));
+        setItems(prev => {
+          const prevIds = new Set(prev.map(i => i.id));
+          const toAdd = fresh.filter(i => !prevIds.has(i.id));
+          if (toAdd.length > 0) {
+            offsetRef.current += toAdd.length;
+          }
+          const updated = prev.map(old => {
+            const u = fresh.find(n => n.id === old.id);
+            return u ? { ...old, ...u } : old;
+          });
+          return [...toAdd, ...updated];
+        });
 
         // 若目前開啟的文章從 fetched 轉為 summarized，重新 fetch detail
         if (curSelectedItemId) {
@@ -95,19 +100,13 @@ export default function useContentFeed() {
             try {
               const detail = await contentApi.get(curSelectedItemId);
               setSelectedItem(detail);
-            } catch (_) {
-              // silently ignore
-            }
+            } catch (_) {}
           }
         }
-
-        await fetchUnreadCounts();
-      } catch (_) {
-        // silently ignore
-      }
-    }, 5000);
+      } catch (_) {}
+    }, POLL_INTERVAL);
     return () => clearInterval(timer);
-  }, [hasPending, fetchUnreadCounts]);
+  }, [fetchUnreadCounts]);
 
   const loadMore = useCallback(() => {
     if (!hasMore || loading) return;

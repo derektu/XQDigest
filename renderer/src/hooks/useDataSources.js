@@ -57,5 +57,23 @@ export default function useDataSources() {
     return dataSources.stats(id);
   }, []);
 
-  return { list, loading, error, refresh, add, update, remove, toggle, validate, checkNow, getStats };
+  const exportSources = useCallback(async () => {
+    const data = await dataSources.exportAll();
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `xqdigest-datasources-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const importSources = useCallback(async (sources) => {
+    const result = await dataSources.importSources(sources);
+    await refresh();
+    return result;
+  }, [refresh]);
+
+  return { list, loading, error, refresh, add, update, remove, toggle, validate, checkNow, getStats, exportSources, importSources };
 }

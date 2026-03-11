@@ -142,6 +142,81 @@ function createRoutes(engine) {
       },
     },
     {
+      method: 'GET',
+      pattern: '/api/datasources/export',
+      handler: () => {
+        const mgr = engine.getDataSourceManager();
+        const all = mgr ? mgr.getAll() : [];
+        const sources = all.map(ds => ({
+          id: ds.id,
+          type: ds.type,
+          name: ds.name,
+          url: ds.url,
+          checkInterval: ds.check_interval,
+          maxItems: ds.max_items,
+          lookbackDays: ds.lookback_days,
+          prompt: ds.prompt || '',
+          enabled: !!ds.enabled,
+        }));
+        return { data: { version: '1', exportedAt: new Date().toISOString(), sources } };
+      },
+    },
+    {
+      method: 'POST',
+      pattern: '/api/datasources/import',
+      handler: (_params, body) => {
+        const mgr = getMgr();
+        const scheduler = engine.getScheduler();
+        const sources = (body && Array.isArray(body.sources)) ? body.sources : [];
+        let imported = 0;
+        let skipped = 0;
+        const errors = [];
+
+        for (const src of sources) {
+          if (!src.type || !src.name || !src.url) {
+            errors.push({ name: src.name || '', url: src.url || '', reason: 'Missing required fields (type, name, url)' });
+            continue;
+          }
+          const prefix = src.type === 'youtube' ? 'yt' : 'rss';
+          let id;
+          if (src.id && !mgr.getById(src.id)) {
+            id = src.id;
+          } else {
+            const slug = src.name.toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '')
+              .slice(0, 20);
+            id = slug ? `${prefix}-${slug}` : `${prefix}-${Date.now().toString(36)}`;
+          }
+          try {
+            const result = mgr.add({
+              id,
+              type: src.type,
+              name: src.name,
+              url: src.url,
+              checkInterval: src.checkInterval,
+              maxItems: src.maxItems,
+              lookbackDays: src.lookbackDays,
+              prompt: src.prompt || '',
+              enabled: src.enabled !== false,
+            });
+            if (scheduler && result.enabled) {
+              scheduler.addSource(result.id);
+            }
+            imported++;
+          } catch (err) {
+            if (err.code === 'DUPLICATE_URL') {
+              skipped++;
+            } else {
+              errors.push({ name: src.name, url: src.url, reason: err.message });
+            }
+          }
+        }
+
+        return { data: { imported, skipped, errors } };
+      },
+    },
+    {
       method: 'POST',
       pattern: '/api/datasources/validate',
       handler: async (_params, body) => {

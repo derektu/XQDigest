@@ -32,3 +32,8 @@ output/
 
 # youtube transcript study
 yt-transcript/
+
+# prototype for auto transcript generation
+prototype/audio-transcript/vendor/
+prototype/audio-transcript/models/
+

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import useDataSources from '../hooks/useDataSources';
 import DataSourceList from '../components/DataSourceList';
 import DataSourceForm from '../components/DataSourceForm';
@@ -17,6 +17,14 @@ const btnAdd = {
   transition: 'background 0.15s',
 };
 
+const btnSecondary = {
+  padding: '7px 14px', borderRadius: 4,
+  border: '1px solid var(--color-border)',
+  background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', cursor: 'pointer',
+  fontSize: 'var(--font-size-base)', fontWeight: 500,
+  transition: 'background 0.15s',
+};
+
 const inputSearch = {
   padding: '5px 10px', borderRadius: 4,
   border: '1px solid var(--color-border)',
@@ -30,7 +38,7 @@ const inputSearch = {
  * 可嵌入 SettingsPage 或獨立使用
  */
 export function DataSourcesContent() {
-  const { list, loading, error, add, update, remove, toggle, validate, checkNow, getStats } = useDataSources();
+  const { list, loading, error, add, update, remove, toggle, validate, checkNow, getStats, exportSources, importSources } = useDataSources();
   const [showForm, setShowForm] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -39,6 +47,7 @@ export function DataSourcesContent() {
   const [sortBy, setSortBy] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
   const [isPackaged, setIsPackaged] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     appApi.getVersion().then(data => setIsPackaged(!!data.isPackaged)).catch(() => {});
@@ -70,6 +79,41 @@ export function DataSourcesContent() {
       await remove(deleteTarget.id, deleteData);
       setDeleteTarget(null);
       setDeleteData(false);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      await exportSources();
+    } catch (err) {
+      alert(`匯出失敗：${err.message}`);
+    }
+  };
+
+  const handleImport = () => {
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!parsed.sources || !Array.isArray(parsed.sources)) {
+        alert('檔案格式錯誤，請選擇有效的匯出檔案');
+        return;
+      }
+      const { imported, skipped, errors } = await importSources(parsed.sources);
+      let msg = `成功匯入 ${imported} 筆`;
+      if (skipped > 0) msg += `，跳過 ${skipped} 筆（URL 重複）`;
+      if (errors && errors.length > 0) {
+        msg += `\n\n失敗 ${errors.length} 筆：\n` + errors.map(e => `• ${e.name}：${e.reason}`).join('\n');
+      }
+      alert(msg);
+    } catch (_err) {
+      alert('檔案格式錯誤，請選擇有效的匯出檔案');
     }
   };
 
@@ -123,7 +167,11 @@ export function DataSourcesContent() {
     <div style={{ padding: 24, maxWidth: 960, margin: '0 auto' }}>
       <div style={headerStyle}>
         <h2 style={{ margin: 0, color: 'var(--color-text-primary)' }}>資料源管理</h2>
-        <button style={btnAdd} onClick={handleAdd}>+ 新增來源</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={btnSecondary} onClick={handleImport}>匯入</button>
+          <button style={btnSecondary} onClick={handleExport}>匯出</button>
+          <button style={btnAdd} onClick={handleAdd}>+ 新增來源</button>
+        </div>
       </div>
 
       <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12, padding: '0 4px' }}>
@@ -163,6 +211,8 @@ export function DataSourcesContent() {
           existingSources={list}
         />
       )}
+
+      <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleFileChange} />
 
       {deleteTarget && (
         <ConfirmDialog

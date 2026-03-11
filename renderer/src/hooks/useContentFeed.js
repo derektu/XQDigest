@@ -80,15 +80,21 @@ export default function useContentFeed() {
         const curSelectedItemId = selectedItemIdRef.current;
 
         setItems(prev => {
+          const freshIds = new Set(fresh.map(i => i.id));
+          const fetchLimit = Math.max(offsetRef.current, PAGE_SIZE);
+          const allFetched = fresh.length < fetchLimit;
+
           const prevIds = new Set(prev.map(i => i.id));
           const toAdd = fresh.filter(i => !prevIds.has(i.id));
           if (toAdd.length > 0) {
             offsetRef.current += toAdd.length;
           }
-          const updated = prev.map(old => {
-            const u = fresh.find(n => n.id === old.id);
-            return u ? { ...old, ...u } : old;
-          });
+          const updated = prev
+            .filter(old => !allFetched || freshIds.has(old.id))
+            .map(old => {
+              const u = fresh.find(n => n.id === old.id);
+              return u ? { ...old, ...u } : old;
+            });
           return [...toAdd, ...updated];
         });
 

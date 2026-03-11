@@ -39,6 +39,13 @@ function createMockEngine() {
     getAll: () => Array.from(sources.values()),
     getById: (id) => sources.get(id) || null,
     add: (fields) => {
+      // 檢查重複 URL
+      const existing = Array.from(sources.values()).find(s => s.url === fields.url);
+      if (existing) {
+        const err = new Error(`Duplicate URL: ${fields.url}`);
+        err.code = 'DUPLICATE_URL';
+        throw err;
+      }
       const id = fields.id || `ds-${nextId++}`;
       const ds = { id, ...fields, enabled: fields.enabled !== false };
       sources.set(id, ds);
@@ -234,6 +241,88 @@ describe('ApiServer', () => {
 
     const listRes = await makeRequest(port, 'GET', '/api/datasources');
     assert.equal(listRes.body.length, 0);
+  });
+
+  it('GET /api/datasources/export 應回傳所有資料源的設定', async () => {
+    // 先新增一個資料源
+    await makeRequest(port, 'POST', '/api/datasources', {
+      id: 'yt-export-test', type: 'youtube', name: 'Export Test',
+      url: 'https://www.youtube.com/@test', enabled: true,
+    });
+    const res = await makeRequest(port, 'GET', '/api/datasources/export');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.version, '1');
+    assert.ok(res.body.exportedAt);
+    assert.ok(Array.isArray(res.body.sources));
+    const src = res.body.sources.find(s => s.name === 'Export Test');
+    assert.ok(src, 'should contain exported source');
+    assert.equal(src.type, 'youtube');
+    assert.equal(src.id, 'yt-export-test', 'export should include the original id');
+  });
+
+  it('POST /api/datasources/import 應匯入新資料源', async () => {
+    const sources = [
+      { type: 'rss', name: 'Import RSS', url: 'https://example.com/feed.xml', enabled: true },
+    ];
+    const res = await makeRequest(port, 'POST', '/api/datasources/import', { sources });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.imported, 1);
+    assert.equal(res.body.skipped, 0);
+    assert.equal(res.body.errors.length, 0);
+
+    const listRes = await makeRequest(port, 'GET', '/api/datasources');
+    const found = listRes.body.find(s => s.name === 'Import RSS');
+    assert.ok(found, 'imported source should appear in list');
+  });
+
+  it('POST /api/datasources/import 重複 URL 應跳過', async () => {
+    // 使用已存在的 URL（Export Test 已加入）
+    const sources = [
+      { type: 'youtube', name: 'Dup Test', url: 'https://www.youtube.com/@test', enabled: true },
+    ];
+    const res = await makeRequest(port, 'POST', '/api/datasources/import', { sources });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.imported, 0);
+    assert.equal(res.body.skipped, 1);
+  });
+
+  it('POST /api/datasources/import 帶有 id 欄位時應復用原始 ID', async () => {
+    const sources = [
+      { id: 'my-original-id', type: 'rss', name: 'Original ID RSS', url: 'https://example.com/original-feed.xml', enabled: true },
+    ];
+    const res = await makeRequest(port, 'POST', '/api/datasources/import', { sources });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.imported, 1);
+
+    const listRes = await makeRequest(port, 'GET', '/api/datasources');
+    const found = listRes.body.find(s => s.url === 'https://example.com/original-feed.xml');
+    assert.ok(found, 'imported source should appear in list');
+    assert.equal(found.id, 'my-original-id', 'should use the original ID from export');
+  });
+
+  it('POST /api/datasources/import id 衝突時應 fallback 為 name-based ID', async () => {
+    // Import again with the same ID but different URL (URL won't conflict, but ID will)
+    const sources = [
+      { id: 'my-original-id', type: 'rss', name: 'Conflict ID RSS', url: 'https://example.com/conflict-feed.xml', enabled: true },
+    ];
+    const res = await makeRequest(port, 'POST', '/api/datasources/import', { sources });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.imported, 1);
+
+    const listRes = await makeRequest(port, 'GET', '/api/datasources');
+    const found = listRes.body.find(s => s.url === 'https://example.com/conflict-feed.xml');
+    assert.ok(found, 'imported source should appear in list');
+    assert.notEqual(found.id, 'my-original-id', 'should use fallback ID when original ID conflicts');
+  });
+
+  it('POST /api/datasources/import 缺少必填欄位應回傳 errors', async () => {
+    const sources = [
+      { type: 'rss', name: 'No URL' },  // 缺少 url
+    ];
+    const res = await makeRequest(port, 'POST', '/api/datasources/import', { sources });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.imported, 0);
+    assert.equal(res.body.errors.length, 1);
   });
 
   it('不存在的 API route 應回傳 404', async () => {

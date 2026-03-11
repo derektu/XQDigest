@@ -23,6 +23,8 @@ export const dataSources = {
   validate: (type, url)     => _request('POST',   '/api/datasources/validate', { type, url }),
   checkNow: (id)            => _request('POST',   `/api/datasources/${id}/check`),
   stats:    (id)            => _request('GET',    `/api/datasources/${id}/stats`),
+  exportAll: ()            => _request('GET',    '/api/datasources/export'),
+  importSources: (sources) => _request('POST',   '/api/datasources/import', { sources }),
 };
 
 export const engine = {

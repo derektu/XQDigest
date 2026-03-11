@@ -10,7 +10,7 @@ app.disableHardwareAcceleration();
 // Single instance lock
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
-  console.error('Another instance is already running.');
+  // 第二個 instance：直接 quit，由第一個 instance 的 second-instance handler 顯示 dialog
   app.quit();
 }
 
@@ -121,10 +121,27 @@ app.on('ready', async () => {
   } catch (err) {
     console.error('Failed to start engine:', err.message);
     const { dialog } = require('electron');
-    dialog.showErrorBox(
-      'XQDigest 啟動失敗',
-      `無法啟動應用程式：\n\n${err.message}\n\n請回報此錯誤。`
-    );
+    const isPortConflict = err.message && err.message.includes('EADDRINUSE');
+    if (isPortConflict) {
+      const { response } = await dialog.showMessageBox({
+        type: 'warning',
+        title: 'XQDigest 啟動失敗',
+        message: 'Port 已被佔用',
+        detail: `無法監聽 Port ${err.message.match(/\d{4,5}/)?.[0] || '3579'}。\n\n可能是另一個 XQDigest 實例正在執行，請檢查系統匣或工作管理員。`,
+        buttons: ['開啟 Feed 頁面', '確定'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      });
+      if (response === 0) {
+        shell.openExternal(`http://localhost:3579`);
+      }
+    } else {
+      dialog.showErrorBox(
+        'XQDigest 啟動失敗',
+        `無法啟動應用程式：\n\n${err.message}\n\n請回報此錯誤。`
+      );
+    }
   }
 
   // C. Auto-update (only in packaged app, not dev mode)
@@ -204,10 +221,21 @@ app.on('ready', async () => {
   }
 });
 
-// Open browser when second instance is launched
-app.on('second-instance', () => {
-  const port = engine && engine.getApiPort();
-  if (port) {
+// Show dialog when second instance is launched
+app.on('second-instance', async () => {
+  const { dialog } = require('electron');
+  const port = (engine && engine.getApiPort()) || 3579;
+  const { response } = await dialog.showMessageBox({
+    type: 'info',
+    title: 'XQDigest',
+    message: 'XQDigest 已在執行中',
+    detail: '程式已在背景執行中。您可以透過系統匣圖示操作，或點擊下方按鈕開啟 Feed 頁面。',
+    buttons: ['開啟 Feed 頁面', '確定'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  if (response === 0) {
     shell.openExternal(`http://localhost:${port}`);
   }
 });
